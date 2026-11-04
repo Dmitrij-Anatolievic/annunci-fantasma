@@ -14,6 +14,13 @@ Versione: 1.2.0 (in prova)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
+## Da sapere prima di provarla
+
+- **È una versione di prova.** Il semaforo segnala indizi, non dà sentenze: un annuncio rosso non è per forza una truffa, uno verde non è per forza serio. Leggi sempre i motivi.
+- **Chrome, Brave, Edge:** per gli aggiornamenti estrai il nuovo zip **sempre nella stessa cartella** (sovrascrivi i file) e premi "Ricarica" nella pagina delle estensioni. Se cambi cartella, il browser la tratta come un'estensione nuova e il diario delle candidature riparte da zero.
+- **Firefox:** l'estensione resta attiva solo fino alla chiusura del browser; alla riapertura va caricata di nuovo. Per renderla permanente deve essere firmata da Mozilla (è gratis): lo faremo quando la versione sarà stabile.
+- **Privacy:** l'estensione legge solo la pagina che stai guardando e non invia dati a nessuno. Diario, verifiche e stipendi visti restano nel tuo browser.
+
 ## Cosa ti dice su ogni annuncio
 
 - **Semaforo di rischio** con i motivi: età dell'annuncio, ripubblicazioni, candidati, retribuzione, chi pubblica (azienda o agenzia), condizioni poco serie (partita IVA o libera professione, provvigioni, richieste di soldi, prestazione occasionale, stage senza rimborso).
