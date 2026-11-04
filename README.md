@@ -1,16 +1,23 @@
 # Annunci Fantasma
 
-Estensione Chrome che ti aiuta a distinguere gli annunci di lavoro veri da quelli "fantasma" o poco seri.
+Estensione per browser (Chrome, Brave, Edge, Firefox) che ti aiuta a distinguere gli annunci di lavoro veri da quelli "fantasma" o poco seri.
 Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario personale** delle candidature e una **verifica sul sito dell'azienda**.
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 1.1.0
+Versione: 1.2.0 (in prova)
+
+## Scarica
+
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-1.2.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.2.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-1.2.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.2.0-firefox.zip)
+
+Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
 ## Cosa ti dice su ogni annuncio
 
 - **Semaforo di rischio** con i motivi: età dell'annuncio, ripubblicazioni, candidati, retribuzione, chi pubblica (azienda o agenzia), condizioni poco serie (partita IVA o libera professione, provvigioni, richieste di soldi, prestazione occasionale, stage senza rimborso).
-- **L'azienda**: dipendenti, persone su LinkedIn, follower, settore e valutazione, quando il sito li mostra; più tre ricerche con un clic: *Bilanci e fatturato*, *Recensioni*, *Notizie* (assunzioni, licenziamenti, crisi).
+- **L'azienda**: dipendenti, persone su LinkedIn, follower, settore e valutazione, quando il sito li mostra; confronto tra dipendenti dichiarati e persone su LinkedIn; più ricerche con un clic: *Dipendenti e fatturato ufficiali*, *Recensioni*, *Reddit*, *Trustpilot*, *Notizie* (assunzioni, licenziamenti, crisi).
 - **Stipendio**: quello dell'annuncio e quelli che hai già visto per lo stesso ruolo (lo storico cresce mentre navighi), più la ricerca dello stipendio medio del ruolo.
 - **Diario** delle candidature e **verifica** sul sito dell'azienda.
 - **Numero sull'icona** con il punteggio, colorato come il semaforo.
