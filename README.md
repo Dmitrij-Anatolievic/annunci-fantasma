@@ -1,0 +1,128 @@
+# Annunci Fantasma
+
+Estensione Chrome che ti aiuta a distinguere gli annunci di lavoro veri da quelli "fantasma" o poco seri.
+Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario personale** delle candidature e una **verifica sul sito dell'azienda**.
+
+Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
+
+Versione: 1.1.0
+
+## Cosa ti dice su ogni annuncio
+
+- **Semaforo di rischio** con i motivi: età dell'annuncio, ripubblicazioni, candidati, retribuzione, chi pubblica (azienda o agenzia), condizioni poco serie (partita IVA o libera professione, provvigioni, richieste di soldi, prestazione occasionale, stage senza rimborso).
+- **L'azienda**: dipendenti, persone su LinkedIn, follower, settore e valutazione, quando il sito li mostra; più tre ricerche con un clic: *Bilanci e fatturato*, *Recensioni*, *Notizie* (assunzioni, licenziamenti, crisi).
+- **Stipendio**: quello dell'annuncio e quelli che hai già visto per lo stesso ruolo (lo storico cresce mentre navighi), più la ricerca dello stipendio medio del ruolo.
+- **Diario** delle candidature e **verifica** sul sito dell'azienda.
+- **Numero sull'icona** con il punteggio, colorato come il semaforo.
+
+Cosa non può fare, per onestà: bilanci, licenziamenti, recensioni e stipendi di 5 anni fa non sono dati pubblici e gratuiti che un'estensione possa leggere da sola. Per questo l'estensione ti porta alla ricerca giusta con un clic invece di inventare numeri.
+
+## Dove funziona
+
+| Dove | Come |
+| --- | --- |
+| LinkedIn, Indeed | Automatico |
+| Subito, Jooble e qualsiasi pagina annuncio con dati schema.org (es. Randstad) | Automatico sulle pagine del singolo annuncio |
+| Glassdoor, Bakeca, Careerjet, Jobrapido, Talent.com, Welcome to the Jungle, Adecco, Manpower, Gi Group, Umana, Openjobmetis | Automatico se la pagina ha i dati schema.org, altrimenti clic sull'icona |
+| Pagine carriere aziendali: Greenhouse, Lever, Workday, SmartRecruiters, Teamtailor, Recruitee, InRecruiting, Personio | Come sopra |
+| Qualsiasi altro sito | Clic sull'icona |
+
+## Browser
+
+| Browser | Pacchetto |
+| --- | --- |
+| Chrome, Brave, Edge, Opera, Vivaldi | `annunci-fantasma-<versione>-chrome-brave-edge.zip` |
+| Firefox (121 o successivo) | `annunci-fantasma-<versione>-firefox.zip` |
+
+Safari non è supportato: richiede un account sviluppatore Apple a pagamento.
+
+## Installazione
+
+### Chrome, Brave, Edge, Opera, Vivaldi
+
+1. Scarica ed estrai lo zip in una cartella. Per gli aggiornamenti usa **sempre la stessa cartella**: se cambi cartella, Chrome assegna un nuovo ID e il diario riparte da zero.
+2. In Chrome apri `chrome://extensions` e attiva **Modalità sviluppatore**.
+3. Clicca **Carica estensione non pacchettizzata** e scegli la cartella.
+4. Fissa l'icona nella barra degli strumenti (simbolo del puzzle → puntina).
+
+Se l'analisi non parte da sola: **Dettagli** dell'estensione → **Accesso ai siti** → "Sui siti specifici" con i siti attivi.
+
+### Firefox
+
+1. Apri `about:debugging#/runtime/this-firefox`.
+2. **Carica componente aggiuntivo temporaneo** e scegli il file `manifest.json` dentro la cartella estratta dallo zip Firefox.
+3. In Firefox un'estensione caricata così resta attiva fino alla chiusura del browser. Per installarla in modo permanente va firmata gratuitamente da Mozilla (addons.mozilla.org, anche come estensione non pubblica).
+4. Se l'analisi non parte: menu Estensioni → Annunci Fantasma → **Consenti sempre** sui siti di lavoro.
+
+## Segnali e punteggio
+
+| Segnale | Punti |
+| --- | --- |
+| Online da 30 giorni o più (anche "1 mese fa") | +2 |
+| Online da 14 a 29 giorni | +1 |
+| Annuncio ripubblicato (+1 se meno di 14 giorni fa) | +2 |
+| Non accetta più candidature | +3 |
+| Scaduto secondo i dati dell'annuncio ma ancora online | +2 |
+| Più di 100 candidati e aperto da più di 14 giorni | +1 |
+| Retribuzione non indicata | +1 |
+| Candidatura gestita fuori dal sito | +1 |
+| Contratto di collaborazione invece che da dipendente | +1 |
+| Pubblicato da agenzia o società di selezione (azienda finale non indicata) | +1 |
+| Stage o tirocinio senza rimborso indicato | +1 |
+| Partita IVA richiesta o tra le forme di contratto | +2 |
+| Lavoro autonomo ("libera professione", "libero professionista") | +2 |
+| L'hai già visto giorni fa e ora la data risulta nuova (annuncio rinfrescato) | +2 |
+| Dichiara almeno 200 dipendenti ma meno del 5% è su LinkedIn | +1 |
+| Compenso a provvigione o "guadagni illimitati" | +2 |
+| Ti chiedono di pagare (corso, kit, iscrizione) | +3 |
+| Prestazione occasionale o ritenuta d'acconto | +1 |
+| Descrizione molto scarna | +1 |
+| L'azienda risponde spesso ai candidati | −1 |
+| L'azienda sta valutando attivamente le candidature (LinkedIn) | −1 |
+| 3 o più tue candidature all'azienda senza risposta (diario) | +2 |
+| Annuncio NON trovato sul sito dell'azienda (verifica tua) | +2 |
+| Annuncio trovato sul sito dell'azienda (verifica tua) | −1 |
+| Annuncio promosso | 0 (solo informativo) |
+
+Semaforo: 0–1 verde (rischio basso), 2–3 giallo (medio), 4 o più rosso (alto).
+
+## Diario
+
+- **Mi sono candidato**: segna la candidatura per quell'annuncio (una volta sola).
+- **Mi hanno risposto**: aggiunge una risposta ricevuta da quell'azienda.
+
+## Esporta e importa i tuoi dati
+
+- **Esporta** scarica un file `annunci-fantasma-AAAA-MM-GG.json` con diario e verifiche: tienilo come copia di sicurezza o per passare a un altro computer.
+- **Importa** carica quel file e lo **unisce** ai dati che hai già, senza cancellare niente: per le candidature tiene tutte quelle distinte, per le verifiche tiene la più recente.
+
+## Verifica sul sito dell'azienda
+
+1. **Cerca sul web** apre una ricerca Google del titolo e dell'azienda fuori da LinkedIn e Indeed.
+2. Guardi i risultati e segni **Trovato** o **Non trovato**.
+3. L'esito resta salvato per quell'annuncio e cambia il punteggio.
+
+La verifica è manuale di proposito: molte pagine carriere non si leggono in modo affidabile con un programma, così l'esito lo decidi tu.
+
+## Permessi
+
+- `storage`: salvare diario e verifiche nel browser.
+- `activeTab` e `scripting`: analizzare la pagina **solo quando clicchi l'icona**, solo in quella scheda.
+
+## Sviluppo
+
+```
+node test/analyze.test.js   # test automatici
+./build.sh                  # crea i pacchetti in dist/
+```
+
+## Limiti noti
+
+- I pesi dei segnali sono scelti a mano e vanno tarati con l'uso.
+- Se un sito cambia la struttura della pagina, il riconoscimento può smettere di funzionare.
+- Indeed Italia non mostra la data di pubblicazione: lì il segnale di età spesso manca.
+- Indeed a volte mostra una verifica anti-robot ("Ci siamo quasi…"): finché non la superi, l'annuncio non viene analizzato.
+
+## Licenza
+
+MIT

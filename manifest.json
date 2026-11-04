@@ -1,0 +1,64 @@
+{
+  "manifest_version": 3,
+  "name": "Annunci Fantasma",
+  "version": "1.2.0",
+  "description": "Semaforo di rischio sugli annunci di lavoro: annunci fantasma e condizioni poco serie, scheda azienda, diario. Nessun dato inviato.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Annunci Fantasma: analizza questo annuncio",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://*.indeed.com/*",
+        "https://*.glassdoor.it/*",
+        "https://*.glassdoor.com/*",
+        "https://*.subito.it/*",
+        "https://*.bakeca.it/*",
+        "https://*.jooble.org/*",
+        "https://*.careerjet.it/*",
+        "https://*.jobrapido.com/*",
+        "https://*.talent.com/*",
+        "https://*.welcometothejungle.com/*",
+        "https://*.randstad.it/*",
+        "https://*.adecco.it/*",
+        "https://*.manpower.it/*",
+        "https://*.gigroup.it/*",
+        "https://*.umana.it/*",
+        "https://*.openjobmetis.it/*",
+        "https://*.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.teamtailor.com/*",
+        "https://*.recruitee.com/*",
+        "https://*.intervieweb.it/*",
+        "https://*.personio.de/*",
+        "https://*.personio.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
