@@ -14,6 +14,8 @@ eval(pick('  function mergeEntry', '  function importData'));
 eval(pick('  const num = t =>', '  const google = '));
 eval(pick('  // --- Parole chiave dell', '  // ======================================================================\n  // Interfaccia'));
 eval(pick('  const REGISTRY_RE', '  // Sulle pagine dei registri'));
+eval(pick('  const PAY_WORD', '  const REVIEWS_PAGE'));
+eval(pick('  function paymentCheck', '  // ======================================================================\n  // Come funziona la candidatura'));
 
 const has = (r, text) => r.reasons.some(([, t]) => t.includes(text));
 let passed = 0;
@@ -222,6 +224,26 @@ test('Registro: tanti requisiti per un\'azienda di 3 persone → tuttofare', () 
 
 test('Nomi azienda: "GMA GROUP S.R.L." e "Gma Group srl" coincidono', () => {
   assert(normCompany('GMA GROUP S.R.L.') === normCompany('Gma Group srl') && normCompany('Gma Group srl') === 'gma group');
+});
+
+test('Pagamenti: riconosce ritardi e pagamenti puntuali', () => {
+  const r = paymentMentions([
+    'Ottima agenzia interinale, attenzione al dipendente stipendio puntuale. Buona selezione offerte.',
+    'Ambiente pessimo. Lo stipendio arriva sempre in ritardo di due mesi.',
+    'Non pagano gli straordinari e la tredicesima è arretrata.',
+    'Pagamenti regolari, mai un ritardo.',
+    'Il capo è simpatico.'
+  ]);
+  assert(r.neg.length === 2 && r.pos.length === 2);
+});
+
+test('Pagamenti: "mai in ritardo con lo stipendio" è positivo', () => {
+  const r = paymentMentions(['Azienda seria, mai in ritardo con lo stipendio.']);
+  assert(r.neg.length === 0);
+});
+
+test('Pagamenti: 2 lamentele → rosso', () => {
+  assert(paymentCheck({ neg: 2, pos: 5 })[0][1] === 'rosso');
 });
 
 test('Truffa: provvigioni e corso a pagamento', () => {

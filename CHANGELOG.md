@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-11-05
+
+- Nuovo: **Pagano puntuali?** Il pulsante apre le recensioni dei dipendenti su stipendio e retribuzione (su Indeed con il filtro "Retribuzione e benefit"). Il riquadro le legge, conta quante parlano di stipendi in ritardo, arretrati o non pagati e quante di pagamenti puntuali, mostra qualche frase e il voto "Retribuzione e benefit". Più pagine lette si sommano.
+- Sull'annuncio: 2 o più lamentele sui pagamenti → rosso; una → giallo; pagamenti puntuali → verde (solo informativo).
+- Le frasi tipo "mai un ritardo", "nessun ritardo nello stipendio" contano come positive, non come lamentele.
+
 ## 1.4.0 — 2026-11-05
 
 - Nuovo: **dati ufficiali dell'azienda**. Dal pulsante "Dipendenti e fatturato ufficiali" apri la scheda dell'azienda su aziende.it, companyreports.it o ufficiocamerale.it: l'estensione legge stato (attiva, in liquidazione…), dipendenti, fatturato e variazione, utile o perdita, anno di nascita, capitale, e li collega agli annunci di quell'azienda.

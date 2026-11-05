@@ -1,4 +1,4 @@
-// Annunci Fantasma — v1.4.0
+// Annunci Fantasma — v1.5.0
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -540,7 +540,7 @@
 
   // --- Esporta / importa: diario, verifiche e stipendi in un file JSON ---
 
-  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:');
+  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('afrev:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:');
 
   function exportData() {
     chrome.storage.local.get(null, all => {
@@ -628,6 +628,7 @@
     site: (c, t) => google(`"${cleanTitle(t)}" "${c}" (careers OR "lavora con noi" OR carriere OR jobs) -site:linkedin.com -site:indeed.com`),
     finance: c => google(`"${c}" fatturato dipendenti`),
     registry: c => google(`"${c}" dipendenti fatturato (site:aziende.it OR site:companyreports.it OR site:ufficiocamerale.it)`),
+    pay: c => google(`"${c}" (stipendio OR stipendi OR pagamenti) (ritardo OR puntuali OR "non pagano" OR arretrati) (site:indeed.com OR site:glassdoor.it OR site:reddit.com)`),
     reviews: c => google(`"${c}" recensioni dipendenti (site:indeed.com OR site:glassdoor.it OR site:glassdoor.com)`),
     reddit: c => google(`site:reddit.com "${c}" (lavoro OR colloquio OR stipendio OR truffa OR licenziato OR "ci ho lavorato" OR "lavoro lì")`),
     trustpilot: c => 'https://it.trustpilot.com/search?query=' + encodeURIComponent(c),
@@ -650,6 +651,7 @@
       .replace(/['’`]/g, '').replace(LEGAL, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
   }
   const regKey = c => 'afreg:' + normCompany(c);
+  const revKey = c => 'afrev:' + normCompany(c);
 
   const euro = v => v ? parseInt(String(v).replace(/[^\d-]/g, ''), 10) : null;
 
@@ -764,6 +766,99 @@
     small(panel, forAd && normCompany(forAd) !== normCompany(name)
       ? `Collegati agli annunci di «${forAd}». Controlla che sia la stessa azienda (stessa città, stessa attività): se non lo è, apri quella giusta.`
       : 'Li vedrai nel riquadro degli annunci di questa azienda.');
+  }
+
+
+  // ======================================================================
+  // Pagano puntuali? Recensioni lette dalle pagine che apri tu (Indeed, Glassdoor)
+  // ======================================================================
+
+  const PAY_WORD = '(stipend[io]|pagament[io]|paga|busta paga|retribuzion[ei]|bonific[io]|tredicesima|quattordicesima|tfr|straordinari|compens[io])';
+  const PAY_WORD_RE = new RegExp(PAY_WORD, 'i');
+  const PAY_NEG = new RegExp(
+    PAY_WORD + '[^.!?\\n]{0,60}(in ritardo|ritard[io]|ritardat[aoie]|non (vengono |sono |erano |viene |è )?pagat[aoie]|mai pagat[aoie]|arretrat[aoie]|a singhiozzo|quando (gli pare|vogliono)|a rate)' +
+    '|(non pagano|pagano in ritardo|paga(no)? sempre in ritardo|ritard[io] (nei|nel|negli|sui|sugli) (pagament[io]|stipend[io])|senza stipendio|mesi senza (essere pagat|paga|stipendio)|devono ancora pagar|aspett(o|iamo|ando) ancora (lo |gli )?(stipend|pagament|soldi))', 'i');
+  const PAY_POS = new RegExp(
+    PAY_WORD + '[^.!?\\n]{0,40}(puntual[ei]|sempre (in orario|regolar[ei]|puntual[ei])|regolar[ei]|mai (un |in )?ritard[oi]|nessun ritardo|senza ritard[io])' +
+    '|(pagano|paga) (sempre )?(puntual|regolarmente|in orario)|puntualit[aà] (nei|nel|negli) (pagament|stipend)', 'i');
+
+  function paymentMentions(texts) {
+    const neg = [], pos = [];
+    for (const raw of texts) {
+      for (const sent of String(raw).split(/(?<=[.!?])\s+|\n+/)) {
+        const t = sent.trim();
+        if (t.length < 8) continue;
+        const noDelay = /(mai|nessun|senza|zero)( (un|alcun|avuto|stato|stata|in))* ritard[oi]/gi;
+        if (PAY_POS.test(t) && !PAY_NEG.test(t.replace(noDelay, ''))) { pos.push(t); continue; }
+        if (PAY_NEG.test(t.replace(noDelay, ''))) neg.push(t); else if (noDelay.test(t) && PAY_WORD_RE.test(t)) pos.push(t);
+      }
+    }
+    return { neg, pos };
+  }
+
+  const REVIEWS_PAGE = () => (/(^|\.)indeed\.[a-z.]+$/.test(location.hostname) && /^\/cmp\/[^/]+\/reviews/.test(location.pathname)) ||
+    (/(^|\.)glassdoor\.[a-z.]+$/.test(location.hostname) && /Recensioni|Reviews/i.test(location.pathname));
+
+  async function reviewsMode() {
+    const GATE = /Scrivi una recensione sulla tua azienda per visualizzare tutte le recensioni/i;
+    const cardTexts = [...new Set([...document.querySelectorAll('[data-testid="reviews[]"], [data-test="review-details-container"], [id^="empReview"]')]
+      .map(c => (c.innerText || '').trim()).filter(Boolean))];
+    const gated = cardTexts.some(t => GATE.test(t));
+    const cards = cardTexts;
+    const texts = cards.length ? cards.map(t => t.replace(GATE, '')) : [(document.querySelector('main') || document.body).innerText || ''];
+    const all = (document.querySelector('main') || document.body).innerText || '';
+    const { neg, pos } = paymentMentions(texts);
+    const payScore = (all.match(/Retribuzione e benefit\s*\n\s*(\d,\d)/) || all.match(/Compensation and Benefits\s*\n\s*(\d\.\d)/) || [])[1] || null;
+    const overall = (all.match(/Valutazione complessiva\s*\n\s*(\d,\d)/) || [])[1] || null;
+    const cmp = location.pathname.match(/^\/cmp\/([^/]+)/);
+    const name = cmp ? decodeURIComponent(cmp[1]).replace(/-/g, ' ') : ((document.querySelector('h1') || {}).textContent || '').replace(/recensioni|reviews/ig, '').trim();
+    const rev = {
+      source: location.hostname.replace(/^www\./, ''), url: location.href, date: new Date().toISOString().slice(0, 10),
+      read: cards.length || null, topic: /ftopic=paybenefits/.test(location.search),
+      neg: neg.length, pos: pos.length, negSamples: neg.slice(0, 3).map(t => t.slice(0, 160)), payScore, overall
+    };
+    const pending = await store.get('afpending');
+    const forAd = pending && Date.now() - pending.time < 3600 * 1000 ? pending.company : null;
+    // Più pagine lette della stessa azienda: si sommano
+    for (const k of [...new Set([revKey(name), forAd ? revKey(forAd) : null].filter(Boolean))]) {
+      const old = await store.get(k);
+      const merged = old && old.url !== rev.url ? { ...rev, neg: old.neg + rev.neg, pos: old.pos + rev.pos, read: (old.read || 0) + (rev.read || 0),
+        negSamples: [...rev.negSamples, ...(old.negSamples || [])].slice(0, 3), pages: (old.pages || 1) + 1 } : { ...rev, pages: 1 };
+      await store.set(k, merged);
+    }
+
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = el('div',
+        'position:fixed;bottom:16px;right:16px;z-index:2147483647;width:300px;max-height:70vh;overflow:auto;' +
+        'background:#fff;color:#222;border:1px solid #ccc;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);' +
+        'font:13px/1.4 system-ui,sans-serif;padding:10px 12px;text-align:left;letter-spacing:normal');
+      panel.id = PANEL_ID;
+      document.body.appendChild(panel);
+    }
+    panel.textContent = '';
+    const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
+    head.appendChild(el('div', 'font-weight:600', 'Pagano puntuali?'));
+    head.appendChild(button('×', () => panel.remove(), 'Chiudi'));
+    panel.appendChild(head);
+    small(panel, `In questa pagina (${rev.read || 'testo'} recensioni lette): ${neg.length} parlano di stipendi in ritardo o non pagati, ${pos.length} di pagamenti puntuali.`);
+    if (payScore) small(panel, `Voto "Retribuzione e benefit": ${payScore} su 5.`);
+    for (const t of rev.negSamples) small(panel, '✗ «' + t + '»');
+    if (!rev.topic && /indeed\./.test(location.hostname)) {
+      const u = new URL(location.href); u.searchParams.set('ftopic', 'paybenefits');
+      panel.appendChild(button('Solo recensioni su stipendio', () => { location.href = u.href; }, 'Filtra le recensioni sull\'argomento retribuzione'));
+    }
+    small(panel, (gated ? 'Indeed mostra il testo completo solo a chi scrive una recensione: leggo la parte visibile di ciascuna. ' : '') +
+      'Leggo solo le recensioni di questa pagina; aprendo la pagina successiva se ne aggiungono altre.' +
+      (forAd && normCompany(forAd) !== normCompany(name) ? ` Collegate agli annunci di «${forAd}»: controlla che sia la stessa azienda.` : ''));
+  }
+
+  function paymentCheck(rev) {
+    if (!rev) return [];
+    if (rev.neg >= 2) return [[2, 'rosso', `Pagamenti: ${rev.neg} recensioni parlano di stipendi in ritardo o non pagati`]];
+    if (rev.neg === 1) return [[1, 'giallo', 'Pagamenti: una recensione parla di stipendi in ritardo o non pagati']];
+    if (rev.pos >= 2) return [[0, 'verde', `Pagamenti: ${rev.pos} recensioni dicono che pagano puntuali`]];
+    return [];
   }
 
   // ======================================================================
@@ -1022,6 +1117,8 @@
     const isAgency = companyInfo && companyInfo.agencySite;
     const reg = isAgency ? null : await store.get(regKey(company));
     for (const [pts, color, text] of registryCheck(reg, adText)) { score += pts; reasons.push([color, text]); }
+    const rev = await store.get(revKey(company));
+    for (const [pts, color, text] of paymentCheck(rev)) { score += pts; reasons.push([color, text]); }
     const g0 = employeeGap(companyInfo || {});
     if (g0 && g0.points) { score += g0.points; reasons.push(['giallo', g0.text]); }
     const nApplied = diary.applied.length;
@@ -1099,7 +1196,15 @@
       small(panel, 'Dati ufficiali non ancora letti: premi il pulsante qui sotto e apri la scheda dell\'azienda (stessa città e attività). Il riquadro li legge e li confronta con l\'annuncio.');
     }
     panel.appendChild(button('Dipendenti e fatturato ufficiali', () => { store.set('afpending', { company, time: Date.now() }); open(SEARCHES.registry(company)); }, 'Dati della Camera di Commercio (dipendenti dichiarati, fatturato, utile) su aziende.it, companyreports.it, ufficiocamerale.it'));
-    panel.appendChild(button('Recensioni', () => open(ci.reviewsUrl || SEARCHES.reviews(company)), 'Recensioni di chi ci lavora o ci ha lavorato (Indeed, Glassdoor)'));
+    if (rev) {
+      small(panel, `Pagamenti (${rev.source}, ${rev.read || '?'} recensioni lette il ${rev.date.split('-').reverse().join('/')}): ${rev.neg} su ritardi o mancati pagamenti, ${rev.pos} su pagamenti puntuali${rev.payScore ? '; voto retribuzione ' + rev.payScore + '/5' : ''}.`);
+      for (const t of (rev.negSamples || []).slice(0, 2)) small(panel, '✗ «' + t + '»');
+    }
+    panel.appendChild(button('Pagano puntuali?', () => {
+      store.set('afpending', { company, time: Date.now() });
+      open(ci.reviewsUrl ? ci.reviewsUrl + '?ftopic=paybenefits' : SEARCHES.pay(company));
+    }, 'Apri le recensioni su stipendio e pagamenti: il riquadro le legge e conta ritardi e pagamenti puntuali'));
+    panel.appendChild(button('Recensioni', () => { store.set('afpending', { company, time: Date.now() }); open(ci.reviewsUrl || SEARCHES.reviews(company)); }, 'Recensioni di chi ci lavora o ci ha lavorato (Indeed, Glassdoor)'));
     panel.appendChild(button('Reddit', () => open(SEARCHES.reddit(company)), 'Discussioni su Reddit: colloqui, stipendi, lamentele'));
     panel.appendChild(button('Trustpilot', () => open(SEARCHES.trustpilot(company)), 'Recensioni dei clienti: un\'azienda che tratta male i clienti spesso tratta male anche i dipendenti'));
     panel.appendChild(button('Notizie', () => open(SEARCHES.news(company)), 'Notizie recenti: assunzioni, licenziamenti, crisi'));
@@ -1204,6 +1309,11 @@
   }
 
   function step() {
+    if (REVIEWS_PAGE()) {
+      const k = 'rev:' + location.pathname + location.search;
+      if (k !== lastKey) { lastKey = k; setTimeout(reviewsMode, 1200); }
+      return;
+    }
     if (REGISTRY_RE.test(location.hostname)) {
       const k = 'reg:' + location.pathname;
       if (k !== lastKey) { lastKey = k; registryMode(); }
