@@ -13,6 +13,7 @@ eval(pick('  const DAY', '  // Dati strutturati') + pick('  // Partita IVA come 
 eval(pick('  function mergeEntry', '  function importData'));
 eval(pick('  const num = t =>', '  const google = '));
 eval(pick('  // --- Parole chiave dell', '  // ======================================================================\n  // Interfaccia'));
+eval(pick('  const REGISTRY_RE', '  // Sulle pagine dei registri'));
 
 const has = (r, text) => r.reasons.some(([, t]) => t.includes(text));
 let passed = 0;
@@ -168,6 +169,59 @@ test('Confronto CV: trova cosa c\'è e cosa manca', () => {
 test('Confronto CV: "SAP" non trovato dentro "sapere"', () => {
   const r = compareCv('Requisiti: SAP.', 'Voglia di sapere e imparare.');
   assert(r.miss.includes('SAP'));
+});
+
+test('Subito: "Tipo di contratto: Contratto a progetto" è segnalato', () => {
+  const r = analyze({ title: 'Operatore', header: 'Oggi alle 17:01\n12.000 €\nLivello\nImpiegato\nTipo di contratto\nContratto a progetto', body: long }, null);
+  assert(has(r, 'a progetto'));
+});
+
+test('Subito: annuncio di un privato è segnalato', () => {
+  const r = analyze({ title: 'Segretaria', header: 'Oggi alle 11:03\n1.000 €', body: long, companyInfo: { privateUser: true } }, null);
+  assert(has(r, 'privato'));
+});
+
+const AZIENDE_IT = 'NAPOLIWEB SRL\nATTIVA\nSOCIETA\' A RESPONSABILITA\' LIMITATA\nNapoli (NA)\nATECO 62.9\ndal 2000\nP.IVA 07603110631\nREA NA-638510\n€ 156.034\nFatturato 2024\n-30,7%\nVariazione vs 2021\n€ 3.818\nPerdita 2024\n3\nDipendenti\n€ 10.400\nCapitale sociale\n';
+const COMPANYREPORTS = 'Office Solution Srl\nPartita IVA\n03489430987\nFatturato\n€ 916.476 (2024)ACQUISTA BILANCIO\nUtile\n€ 56.563 (2024)\nN. Dipendenti\nda 6 a 9\nStato Attività\nAttiva\nFondazione\n06/03/1992\n';
+
+test('Registro: legge la scheda di aziende.it', () => {
+  const r = parseRegistry(AZIENDE_IT);
+  assert(r.status === 'attiva' && r.employees === '3' && r.revenue === 156034 && r.revenueYear === '2024');
+  assert(r.revenueChange === '-30,7' && r.profit === -3818 && r.since === '2000' && r.capital === 10400 && r.piva === '07603110631');
+});
+
+test('Registro: legge la scheda di companyreports.it', () => {
+  const r = parseRegistry(COMPANYREPORTS);
+  assert(r.status === 'attiva' && r.employees === 'da 6 a 9' && r.revenue === 916476 && r.profit === 56563 && r.since === '1992');
+  assert(maxEmployees(r.employees) === 9);
+});
+
+test('Registro: "IN LIQUIDAZIONE" di un\'altra azienda nell\'elenco non conta', () => {
+  const r = parseRegistry('VFD NAPOLI SRL\nATTIVA\n21\nDipendenti\nAcquista visura\nAltre aziende a Napoli\nBRUNO RIVA SRL IN LIQUIDAZIONE\n1-2 milioni\nIN LIQUIDAZIONE\n');
+  assert(r.status === 'attiva');
+});
+
+test('Registro: azienda inattiva → segnale rosso', () => {
+  const r = parseRegistry('Interni Srl\nN. Dipendenti\n2\nStato Attività\nInattiva\n');
+  assert(registryCheck(r, '').some(x => x[1] === 'rosso'));
+});
+
+test('Registro: "multinazionale" con 3 dipendenti → segnale', () => {
+  const r = parseRegistry(AZIENDE_IT);
+  assert(registryCheck(r, 'Siamo una multinazionale leader nel settore.').some(x => /multinazionale/.test(x[2])));
+});
+
+test('Registro: perdita e fatturato in calo → segnale', () => {
+  assert(registryCheck(parseRegistry(AZIENDE_IT), '').some(x => /difficolt/.test(x[2])));
+});
+
+test('Registro: tanti requisiti per un\'azienda di 3 persone → tuttofare', () => {
+  const req = 'Requisiti:\n' + Array.from({ length: 11 }, (_, i) => '- competenza ' + i).join('\n') + '\nOffriamo: contratto';
+  assert(registryCheck(parseRegistry(AZIENDE_IT), req).some(x => /tuttofare/.test(x[2])));
+});
+
+test('Nomi azienda: "GMA GROUP S.R.L." e "Gma Group srl" coincidono', () => {
+  assert(normCompany('GMA GROUP S.R.L.') === normCompany('Gma Group srl') && normCompany('Gma Group srl') === 'gma group');
 });
 
 test('Truffa: provvigioni e corso a pagamento', () => {

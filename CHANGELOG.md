@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 — 2026-11-05
+
+- Nuovo: **dati ufficiali dell'azienda**. Dal pulsante "Dipendenti e fatturato ufficiali" apri la scheda dell'azienda su aziende.it, companyreports.it o ufficiocamerale.it: l'estensione legge stato (attiva, in liquidazione…), dipendenti, fatturato e variazione, utile o perdita, anno di nascita, capitale, e li collega agli annunci di quell'azienda.
+- Nuovo: **controlli incrociati annuncio-registro**: azienda non attiva (rosso); "multinazionale", "leader", "in forte crescita" con meno di 10 dipendenti; tanti requisiti diversi per un'azienda piccolissima (possibile tuttofare); perdita con fatturato in calo; azienda nata da meno di un anno.
+- Corretto (Indeed): nel modulo di candidatura il semaforo non viene più ricalcolato (lì l'annuncio non c'è e il giudizio cambiava). Il riquadro mostra il giudizio dato sulla pagina dell'annuncio. Lo stesso vale per i moduli di candidatura degli ATS (Workday, Lever…).
+- Corretto (Subito): l'azienda veniva letta male (a volte compariva il tuo nome utente); ora si leggono solo intestazione e descrizione dell'annuncio, senza le "ricerche simili". Riconosciuti gli annunci di privati e il "Contratto a progetto".
+
 ## 1.3.0 — 2026-11-05
 
 - Nuovo: sezione **Come ti candidi**. Dice in parole semplici con quale programma (ATS) l'azienda raccoglie le candidature (Workday, Greenhouse, Lever, SmartRecruiters, InRecruiting, SAP SuccessFactors, Oracle Taleo, iCIMS, Teamtailor, Recruitee, Personio, Workable, BambooHR), cosa aspettarsi (account sì/no, modulo lungo o breve) e cosa fare. Spiega anche la Candidatura semplice di LinkedIn, il modulo di Indeed e le banche dati delle agenzie.

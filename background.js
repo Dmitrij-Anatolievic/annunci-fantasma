@@ -26,6 +26,11 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || msg.type !== 'af-score' || !sender.tab) return;
   const tabId = sender.tab.id;
+  if (msg.score === null) { // modulo di candidatura: nessun punteggio
+    chrome.action.setBadgeText({ tabId, text: '' });
+    chrome.action.setTitle({ tabId, title: 'Annunci Fantasma: candidatura in corso' });
+    return;
+  }
   chrome.action.setBadgeText({ tabId, text: String(msg.score) });
   chrome.action.setBadgeBackgroundColor({ tabId, color: msg.color || '#9e9e9e' });
   chrome.action.setTitle({ tabId, title: msg.score === '' ? 'Annunci Fantasma: analizza questo annuncio' : `Annunci Fantasma: punteggio di rischio ${msg.score}` });

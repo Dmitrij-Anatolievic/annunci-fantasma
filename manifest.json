@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Annunci Fantasma",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Semaforo di rischio sugli annunci di lavoro: annunci fantasma e condizioni poco serie, scheda azienda, diario. Nessun dato inviato.",
   "permissions": [
     "storage",
@@ -57,7 +57,10 @@
         "https://*.successfactors.eu/*",
         "https://*.taleo.net/*",
         "https://*.icims.com/*",
-        "https://*.bamboohr.com/*"
+        "https://*.bamboohr.com/*",
+        "https://*.aziende.it/*",
+        "https://*.companyreports.it/*",
+        "https://*.ufficiocamerale.it/*"
       ],
       "js": [
         "content.js"

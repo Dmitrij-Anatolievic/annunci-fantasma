@@ -1,4 +1,4 @@
-// Annunci Fantasma — v1.3.0
+// Annunci Fantasma — v1.4.0
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -214,7 +214,13 @@
   const PORTALS = [
     // portali (l'azienda va letta dall'annuncio)
     { re: /(^|\.)glassdoor\.[a-z.]+$/, name: 'Glassdoor', kind: 'portale' },
-    { re: /(^|\.)subito\.it$/, name: 'Subito', kind: 'portale', detail: /^\/offerte-lavoro\/.+-\d+\.htm$/, company: 'a[href*="/utente/"]' },
+    { re: /(^|\.)subito\.it$/, name: 'Subito', kind: 'portale', detail: /^\/offerte-lavoro\/.+-\d+\.htm$/,
+      company: ['[class*="_company_name"] h6', '[class*="_shop-link"] [class*="_user-name"]'],
+      privateSel: '[class*="_private-user-column"] [class*="_name"]',
+      titleCompany: /^Subito - (.+?) - /,
+      bodySel: '[class*="_description"]:not([class*="description-title"])',
+      headerRange: [/\nOFFERTE DI LAVORO\n/, /\nDescrizione\n/],
+      extra: () => { const f = [...document.querySelectorAll('ul,section,div')].find(e => /^Livello\b/.test(e.innerText || '') && e.innerText.length < 800); return f ? f.innerText : ''; } },
     { re: /(^|\.)bakeca\.it$/, name: 'Bakeca', kind: 'portale' },
     { re: /(^|\.)jooble\.org$/, name: 'Jooble', kind: 'portale', detail: /^\/desc\// },
     { re: /(^|\.)careerjet\.it$/, name: 'Careerjet', kind: 'portale' },
@@ -278,25 +284,43 @@
     const ld = readJobPostingLD();
     const ga = document.title.match(/^(?:Job Application for|Candidatura per)\s+(.+?)\s+(?:at|presso)\s+(.+)$/i);
     const og = (document.querySelector('meta[property="og:site_name"]') || {}).content;
-    const sel = portal && portal.company ? document.querySelector(portal.company) : null;
+    const sel = portal && portal.company ? [].concat(portal.company).map(q => document.querySelector(q)).find(Boolean) : null;
+    const tc = portal && portal.titleCompany ? document.title.match(portal.titleCompany) : null;
     let company = (ld && ld.hiringOrganization && (ld.hiringOrganization.name || ld.hiringOrganization)) || (ga && ga[2]) ||
-      (sel ? (sel.textContent || '').trim() : '');
+      (sel ? (sel.textContent || '').trim() : '') || (tc ? tc[1] : '');
     if (!company && portal && portal.kind === 'ats') {
       company = og || location.hostname.split('.')[0];
     }
     if (!company && !portal) company = og || location.hostname.replace(/^www\./, '');
+    let privateUser = false;
+    if (!company && portal && portal.privateSel) {
+      const pv = document.querySelector(portal.privateSel);
+      if (pv && pv.textContent.trim()) { company = pv.textContent.trim() + ' (privato)'; privateUser = true; }
+    }
     if (!company) company = 'Azienda non indicata';
     const title = (ld && ld.title) || (ga && ga[1]) || (document.querySelector('h1') || {}).textContent || document.title.split(/ [|\-–] /)[0];
     // Il testo dell'annuncio: la descrizione dei dati strutturati è la fonte più pulita
     const ldText = ld && ld.description ? htmlToText(ld.description) : '';
-    const body = (ldText.length > 200 ? ldText + '\n' + text.slice(0, 3000) : text).slice(0, 30000);
+    // Portali con struttura nota: solo intestazione e descrizione dell'annuncio, senza menu e "ricerche simili"
+    const bodyEl = portal && portal.bodySel ? document.querySelector(portal.bodySel) : null;
+    const extra = portal && portal.extra ? portal.extra() : '';
+    let header = '';
+    if (portal && portal.headerRange) {
+      const full = '\n' + (root.innerText || '');
+      const a = full.search(portal.headerRange[0]);
+      const b = a >= 0 ? full.slice(a + 1).search(portal.headerRange[1]) : -1;
+      if (a >= 0 && b > 0) header = full.slice(a, a + 1 + b).trim();
+    }
+    if (extra) header += '\n' + extra;
+    const own = bodyEl ? (bodyEl.innerText || '') + (extra ? '\n' + extra : '') : '';
+    const body = (ldText.length > 200 ? ldText + '\n' + text.slice(0, 3000) : own.length > 50 ? own : text).slice(0, 30000);
     return {
       company: String(company).trim(),
       title: String(title).trim(),
-      header: '',
+      header,
       body,
-      kwText: ldText.length > 200 ? ldText : text,
-      companyInfo: portal && portal.kind === 'agenzia' ? { agencySite: portal.name } : null
+      kwText: ldText.length > 200 ? ldText : own.length > 50 ? own : text,
+      companyInfo: portal && portal.kind === 'agenzia' ? { agencySite: portal.name } : privateUser ? { privateUser: true } : null
     };
   }
 
@@ -452,7 +476,7 @@
     if (/Valutazione attiva delle candidature|Actively reviewing applicants/i.test(header + body.slice(0, 1500))) add(-1, 'verde', 'L\'azienda sta valutando attivamente le candidature');
     if (/Spesso risponde entro|Often responds within|risponde in genere entro/i.test(header + body.slice(0, 3000))) add(-1, 'verde', 'L\'azienda risponde spesso ai candidati');
     if (/Promoss[ao]|Promoted/i.test(header)) add(0, 'grigio', 'Annuncio promosso (a pagamento): solo informativo');
-    if (/\bCollaborazione\b/.test(header)) add(1, 'giallo', 'Contratto di collaborazione, non da dipendente');
+    if (/\bCollaborazione\b/.test(header) || /Tipo di contratto\s*\n?\s*(Contratto a progetto|Collaborazione|Co\.?co\.?co)/i.test(header)) add(1, 'giallo', 'Contratto di collaborazione o a progetto, non da dipendente');
 
     // --- Chi pubblica: agenzia o società di selezione al posto dell'azienda finale ---
     const ci = info.companyInfo || {};
@@ -465,6 +489,7 @@
     // employmentType "CONTRACTOR" non si usa: Randstad lo mette anche su contratti a tempo determinato
     const empType = ld && ld.employmentType ? [].concat(ld.employmentType).join(' ').toUpperCase() : '';
     const freelance = affirmed(AUTONOMO_RE, info.title || '') || affirmed(AUTONOMO_RE, body);
+    if (info.companyInfo && info.companyInfo.privateUser) add(1, 'giallo', 'Pubblicato da un privato, non da un\'azienda: prima del colloquio chiedi nome dell\'azienda e partita IVA del datore di lavoro');
     if (affirmed(PIVA_RE, header + '\n' + body)) add(2, 'rosso', 'Partita IVA richiesta o tra le forme di contratto');
     else if (freelance) add(2, 'rosso', 'Lavoro autonomo (libera professione): di solito serve la partita IVA, non è da dipendente');
     if (affirmed(/\bprovvigion|guadagni\s+(illimitati|fino a)|solo a commissione/i, body)) add(2, 'rosso', 'Compenso a provvigione o "guadagni illimitati"');
@@ -515,7 +540,7 @@
 
   // --- Esporta / importa: diario, verifiche e stipendi in un file JSON ---
 
-  const isOurKey = k => k === 'afcv' || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:');
+  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:');
 
   function exportData() {
     chrome.storage.local.get(null, all => {
@@ -610,6 +635,136 @@
     salary: t => google(`"${cleanTitle(t)}" stipendio medio RAL Italia`)
   };
 
+
+
+  // ======================================================================
+  // Dati ufficiali dell'azienda (Registro Imprese) letti dalle pagine che apri tu
+  // ======================================================================
+  // L'estensione non interroga questi siti da sola: legge la pagina dell'azienda quando la apri
+  // (aziende.it, companyreports.it, ufficiocamerale.it) e la collega agli annunci di quell'azienda.
+
+  const REGISTRY_RE = /(^|\.)(aziende\.it|companyreports\.it|ufficiocamerale\.it)$/;
+  const LEGAL = /\b(s\.?\s?r\.?\s?l\.?\s?s?|s\.?\s?p\.?\s?a\.?|s\.?\s?a\.?\s?s\.?|s\.?\s?n\.?\s?c\.?|soc(ieta)?\.?\s+coop(erativa)?\.?|scarl|unipersonale|societa\s+a\s+responsabilita\s+limitata(\s+semplificata)?|societa\s+per\s+azioni)\b/g;
+  function normCompany(c) {
+    return String(c || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/['’`]/g, '').replace(LEGAL, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+  const regKey = c => 'afreg:' + normCompany(c);
+
+  const euro = v => v ? parseInt(String(v).replace(/[^\d-]/g, ''), 10) : null;
+
+  function parseRegistry(text) {
+    // Solo la scheda dell'azienda: si taglia prima degli elenchi di "altre aziende" (che hanno i loro stati)
+    let t = '\n' + text.replace(/\r/g, '');
+    const cut = t.search(/\n\s*(Altre aziende|Aziende simili|Aziende correlate|Aziende della stessa|Documenti ufficiali|Potrebbe interessarti)/i);
+    if (cut > 200) t = t.slice(0, cut);
+    const m = re => { const x = t.match(re); return x ? x : null; };
+    const r = {};
+    let x;
+    const STATI = '(ATTIVA|INATTIVA|CESSATA|IN LIQUIDAZIONE|SCIOLTA|FALLITA|IN FALLIMENTO|IN SCIOGLIMENTO|SOSPESA)';
+    if ((x = t.slice(0, 1500).match(new RegExp('\\n' + STATI + '\\n'))) || (x = m(/Stato Attivit[aà]\s*[\t|:\n]\s*([A-Za-zà ]{4,30})/i)) ||
+      (x = m(/risulta attualmente un.impresa\s+(attiva|inattiva|cessata)/i))) r.status = x[1].trim().toLowerCase();
+    if ((x = m(/(\d+)\nDipendenti\b/)) || (x = m(/contava\s+(\d+)\s+dipendenti/i)) || (x = m(/N\.?\s*Dipendenti\s*[\t|:\n]\s*(da \d+ a \d+|\d+(-\d+)?)/i)) ||
+      (x = m(/compreso tra\s+(\d+-\d+)\s+dipendenti/i)) || (x = m(/Dipendenti\s*[\t|:]\s*(\d+-\d+|\d+)\s*dipendenti/i))) r.employees = x[1];
+    if ((x = m(/€\s*([\d.]+)\nFatturato\s+(\d{4})/)) || (x = m(/Fatturato\s*[\t|:\n]\s*€?\s*([\d.]+)\s*(?:euro\s*)?\((\d{4})\)/i)) || (x = m(/fatturato di €\s*([\d.]+)/i))) {
+      r.revenue = euro(x[1]); if (x[2]) r.revenueYear = x[2];
+    }
+    if ((x = m(/([+-]\d+(?:,\d+)?)%\nVariazione/)) || (x = m(/in (calo|crescita) del (\d+(?:,\d+)?)%/i))) {
+      r.revenueChange = x.length > 2 && /calo|crescita/i.test(x[1]) ? (x[1].toLowerCase() === 'calo' ? '-' : '+') + x[2] : x[1];
+    }
+    if ((x = m(/€\s*([\d.]+)\n(Utile|Perdita)\s+(\d{4})/))) r.profit = (x[2] === 'Perdita' ? -1 : 1) * euro(x[1]);
+    else if ((x = m(/chiudendo con una perdita di €\s*([\d.]+)/i))) r.profit = -euro(x[1]);
+    else if ((x = m(/chiudendo con un utile di €\s*([\d.]+)/i))) r.profit = euro(x[1]);
+    else if ((x = m(/Utile\s*[\t|:\n]\s*€?\s*(-?[\d.]+)\s*(?:euro\s*)?\((\d{4})\)/i))) r.profit = euro(x[1]);
+    if ((x = m(/Data Iscrizione\s*[\t|:\n]\s*(\d{2}\/\d{2}\/(\d{4}))/i)) || (x = m(/Fondazione\s*[\t|:\n]\s*(\d{2}\/\d{2}\/(\d{4}))/i))) r.since = x[2];
+    else if ((x = m(/\ndal (\d{4})\n/))) r.since = x[1];
+    if ((x = m(/€\s*([\d.]+)\nCapitale sociale/i)) || (x = m(/Capitale Sociale\s*[\t|:\n]\s*€?\s*([\d.]+)/i))) r.capital = euro(x[1]);
+    if ((x = m(/P(?:artita)?\.?\s?IVA\s*[:\n\t]?\s*(\d{11})/i))) r.piva = x[1];
+    return r;
+  }
+
+  function maxEmployees(e) {
+    if (!e) return null;
+    const n = String(e).match(/\d+/g);
+    return n ? Math.max(...n.map(Number)) : null;
+  }
+
+  const fmtEuro = n => (n < 0 ? '-' : '') + Math.abs(n).toLocaleString('it-IT') + ' €';
+
+  function registrySummary(r) {
+    const out = [];
+    if (r.status) out.push(r.status === 'attiva' ? 'attiva' : r.status.toUpperCase());
+    if (r.employees) out.push(`${r.employees} dipendenti`);
+    if (r.revenue) out.push(`fatturato ${fmtEuro(r.revenue)}${r.revenueYear ? ' (' + r.revenueYear + ')' : ''}${r.revenueChange ? ', ' + r.revenueChange + '%' : ''}`);
+    if (r.profit !== undefined && r.profit !== null) out.push(r.profit < 0 ? `perdita ${fmtEuro(-r.profit)}` : `utile ${fmtEuro(r.profit)}`);
+    if (r.since) out.push(`dal ${r.since}`);
+    if (r.capital) out.push(`capitale ${fmtEuro(r.capital)}`);
+    return out.join(' · ');
+  }
+
+  const BIG_CLAIM_RE = /multinazional[ei]|leader (nel|del|di|in|a livello)|grande (azienda|gruppo|realt[aà])|gruppo (internazionale|leader)|realt[aà] (in forte|in continua|in costante) crescita|forte espansione|azienda strutturata|importante (gruppo|realt[aà])/i;
+
+  function requirementCount(text) {
+    let part = requirementsPart(text || '');
+    if (part === text) return 0;
+    part = part.slice(0, 2500);
+    // Una riga per requisito (elenchi puntati o righe brevi), esclusa la riga del titolo
+    const lines = part.split('\n').slice(1).map(l => l.trim()).filter(l => l.length >= 3 && l.length <= 220);
+    const bullets = lines.filter(l => /^([-•·*▪●–]|\d+[.)])\s*\S/.test(l) || /;\s*$/.test(l));
+    const inline = (part.match(/;/g) || []).length + 1;
+    return Math.max(bullets.length, lines.length > 2 ? lines.length : 0, inline > 3 ? inline : 0);
+  }
+
+  // Confronta l'annuncio con i dati ufficiali: segnali e motivi
+  function registryCheck(reg, adText) {
+    const out = [];
+    if (!reg) return out;
+    if (reg.status && reg.status !== 'attiva') out.push([3, 'rosso', `Nel Registro Imprese risulta "${reg.status}": un'azienda così non dovrebbe assumere`]);
+    const emp = maxEmployees(reg.employees);
+    const claim = (adText || '').match(BIG_CLAIM_RE);
+    if (claim && emp !== null && emp < 10) out.push([1, 'giallo', `L'annuncio parla di «${claim[0]}», ma i dati ufficiali dicono ${reg.employees} dipendenti`]);
+    const reqs = requirementCount(adText);
+    if (emp !== null && emp < 10 && reqs >= 10) out.push([1, 'giallo', `Chiede ${reqs} requisiti diversi a fronte di un'azienda di ${reg.employees} dipendenti: potrebbero cercare un tuttofare`]);
+    const ch = reg.revenueChange ? parseFloat(String(reg.revenueChange).replace(',', '.')) : 0;
+    if (reg.profit !== undefined && reg.profit !== null && reg.profit < 0 && ch <= -10) out.push([1, 'giallo', `Conti in difficoltà: perdita nell'ultimo bilancio e fatturato in calo (${reg.revenueChange}%)`]);
+    if (reg.since && new Date().getFullYear() - parseInt(reg.since, 10) < 1) out.push([0, 'grigio', 'Azienda iscritta da meno di un anno']);
+    return out;
+  }
+
+  // Sulle pagine dei registri: legge i dati e li collega agli annunci
+  async function registryMode() {
+    const text = (document.querySelector('main') || document.body).innerText || '';
+    const reg = parseRegistry(text);
+    if (!reg.employees && !reg.revenue && !reg.status) return; // non è la pagina di un'azienda
+    const name = ((document.querySelector('h1') || {}).textContent || document.title.split(/[:|–-]/)[0]).trim();
+    reg.name = name;
+    reg.source = location.hostname.replace(/^www\./, '');
+    reg.url = location.href;
+    reg.date = new Date().toISOString().slice(0, 10);
+    const pending = await store.get('afpending');
+    const forAd = pending && Date.now() - pending.time < 3600 * 1000 ? pending.company : null;
+    await store.set(regKey(name), reg);
+    if (forAd) await store.set(regKey(forAd), reg);
+
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = el('div',
+        'position:fixed;bottom:16px;right:16px;z-index:2147483647;width:300px;' +
+        'background:#fff;color:#222;border:1px solid #ccc;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);' +
+        'font:13px/1.4 system-ui,sans-serif;padding:10px 12px;text-align:left;letter-spacing:normal');
+      panel.id = PANEL_ID;
+      document.body.appendChild(panel);
+    }
+    panel.textContent = '';
+    const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
+    head.appendChild(el('div', 'font-weight:600', 'Dati ufficiali salvati'));
+    head.appendChild(button('×', () => panel.remove(), 'Chiudi'));
+    panel.appendChild(head);
+    small(panel, `${name}: ${registrySummary(reg)}`);
+    small(panel, forAd && normCompany(forAd) !== normCompany(name)
+      ? `Collegati agli annunci di «${forAd}». Controlla che sia la stessa azienda (stessa città, stessa attività): se non lo è, apri quella giusta.`
+      : 'Li vedrai nel riquadro degli annunci di questa azienda.');
+  }
 
   // ======================================================================
   // Come funziona la candidatura (ATS) — spiegato in parole semplici
@@ -798,6 +953,50 @@
     ta.focus();
   }
 
+  // Pagine del modulo di candidatura: qui mancano i dati dell'annuncio, quindi non si ricalcola il rischio
+  function isApplyFlow() {
+    const h = location.hostname, p = location.pathname + location.search;
+    if (/^(smartapply|apply|m5apply)\.indeed\.com$/.test(h)) return true;
+    if (/(^|\.)indeed\.[a-z.]+$/.test(h) && /\/(apply|indeedapply)(\/|$|\?)/i.test(p)) return true;
+    const ats = ATS_INFO.some(a => a.re.test(location.href));
+    return ats && /\/(apply|application|applications|candidatura|candidati|login|signin|register|createaccount)(\/|$|\?|\b)/i.test(p);
+  }
+
+  async function renderApplyMode() {
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = el('div',
+        'position:fixed;bottom:16px;right:16px;z-index:2147483647;width:320px;max-height:80vh;overflow:auto;' +
+        'background:#fff;color:#222;border:1px solid #ccc;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);' +
+        'font:13px/1.4 system-ui,sans-serif;padding:10px 12px;text-align:left;letter-spacing:normal');
+      panel.id = PANEL_ID;
+      document.body.appendChild(panel);
+    }
+    panel.textContent = '';
+    try { chrome.runtime.sendMessage({ type: 'af-score', score: null }); } catch (e) { /* ignora */ }
+    const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
+    head.appendChild(el('div', 'font-weight:600', 'Candidatura in corso'));
+    head.appendChild(button('×', () => panel.remove(), 'Chiudi'));
+    panel.appendChild(head);
+    const last = await store.get('aflast');
+    if (last && Date.now() - last.time < 6 * 3600 * 1000) {
+      const row = el('div', 'display:flex;align-items:center;margin-top:6px');
+      row.appendChild(el('span', `display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:${COLORS[last.level]}`));
+      row.appendChild(el('span', '', `${last.title} — ${last.company}: ${last.label.toLowerCase()} (punteggio ${last.score})`));
+      panel.appendChild(row);
+      small(panel, 'È il giudizio dato sulla pagina dell\'annuncio, dove ci sono tutte le informazioni. Qui sei nel modulo di candidatura: non lo ricalcolo, perché qui l\'annuncio non c\'è.');
+    } else {
+      small(panel, 'Sei nel modulo di candidatura. Il semaforo si calcola sulla pagina dell\'annuncio, dove ci sono tutte le informazioni.');
+    }
+    const app = ATS_INFO.find(a => a.re.test(location.href));
+    if (app) {
+      section(panel, 'Come ti candidi');
+      panel.appendChild(el('div', 'font-size:12px;margin-top:2px', 'Programma usato dall\'azienda: ' + app.name));
+      small(panel, app.what);
+      for (const t of app.tips || []) small(panel, '→ ' + t);
+    }
+  }
+
   async function render(ctx) {
     const { site, company, title, key, result, companyInfo, app, adText } = ctx;
     const again = () => render(ctx);
@@ -820,6 +1019,9 @@
 
     let score = result.score;
     const reasons = result.reasons.slice();
+    const isAgency = companyInfo && companyInfo.agencySite;
+    const reg = isAgency ? null : await store.get(regKey(company));
+    for (const [pts, color, text] of registryCheck(reg, adText)) { score += pts; reasons.push([color, text]); }
     const g0 = employeeGap(companyInfo || {});
     if (g0 && g0.points) { score += g0.points; reasons.push(['giallo', g0.text]); }
     const nApplied = diary.applied.length;
@@ -842,6 +1044,7 @@
 
     const level = score >= 4 ? ['rosso', 'Rischio alto'] : score >= 2 ? ['giallo', 'Rischio medio'] : ['verde', 'Rischio basso'];
     try { chrome.runtime.sendMessage({ type: 'af-score', score, color: COLORS[level[0]] }); } catch (e) { /* estensione ricaricata: ignora */ }
+    store.set('aflast', { title, company, site, score, level: level[0], label: level[1], time: Date.now() });
 
     // Intestazione
     const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
@@ -890,7 +1093,12 @@
     if (ci.rating) facts.push(`valutazione ${ci.rating}`);
     small(panel, facts.length ? facts.join(' · ') : 'Questa pagina non riporta dati sull\'azienda.');
     if (gap && !gap.points) small(panel, gap.text);
-    panel.appendChild(button('Dipendenti e fatturato ufficiali', () => open(SEARCHES.registry(company)), 'Dati della Camera di Commercio (dipendenti dichiarati, fatturato, utile) su aziende.it, companyreports.it, ufficiocamerale.it'));
+    if (reg) {
+      small(panel, `Dati ufficiali (${reg.source}, letti il ${reg.date.split('-').reverse().join('/')}): ${registrySummary(reg)}`);
+    } else if (!isAgency) {
+      small(panel, 'Dati ufficiali non ancora letti: premi il pulsante qui sotto e apri la scheda dell\'azienda (stessa città e attività). Il riquadro li legge e li confronta con l\'annuncio.');
+    }
+    panel.appendChild(button('Dipendenti e fatturato ufficiali', () => { store.set('afpending', { company, time: Date.now() }); open(SEARCHES.registry(company)); }, 'Dati della Camera di Commercio (dipendenti dichiarati, fatturato, utile) su aziende.it, companyreports.it, ufficiocamerale.it'));
     panel.appendChild(button('Recensioni', () => open(ci.reviewsUrl || SEARCHES.reviews(company)), 'Recensioni di chi ci lavora o ci ha lavorato (Indeed, Glassdoor)'));
     panel.appendChild(button('Reddit', () => open(SEARCHES.reddit(company)), 'Discussioni su Reddit: colloqui, stipendi, lamentele'));
     panel.appendChild(button('Trustpilot', () => open(SEARCHES.trustpilot(company)), 'Recensioni dei clienti: un\'azienda che tratta male i clienti spesso tratta male anche i dipendenti'));
@@ -996,6 +1204,16 @@
   }
 
   function step() {
+    if (REGISTRY_RE.test(location.hostname)) {
+      const k = 'reg:' + location.pathname;
+      if (k !== lastKey) { lastKey = k; registryMode(); }
+      return;
+    }
+    if (isApplyFlow()) {
+      const k = 'apply:' + location.hostname + location.pathname;
+      if (k !== lastKey) { lastKey = k; renderApplyMode(); }
+      return;
+    }
     const adapter = pickAdapter();
     if (!adapter) { clearPanel(); lastKey = ''; return; }
     const key = adapter.key();
