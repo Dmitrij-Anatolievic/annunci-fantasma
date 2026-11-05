@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 — 2026-11-05
+
+- Nuovo: sezione **Come ti candidi**. Dice in parole semplici con quale programma (ATS) l'azienda raccoglie le candidature (Workday, Greenhouse, Lever, SmartRecruiters, InRecruiting, SAP SuccessFactors, Oracle Taleo, iCIMS, Teamtailor, Recruitee, Personio, Workable, BambooHR), cosa aspettarsi (account sì/no, modulo lungo o breve) e cosa fare. Spiega anche la Candidatura semplice di LinkedIn, il modulo di Indeed e le banche dati delle agenzie.
+- Nuovo: spiegazione "Cos'è un ATS e come farsi leggere bene", senza miti (il "75% dei CV scartati" non ha fonti).
+- Nuovo: **Il tuo CV e questo annuncio**. Incolli una volta il testo del CV (resta nel browser) e su ogni annuncio vedi quali parole chiave dei requisiti hai già e quali mancano.
+- Riconosciuti in automatico anche i siti carriere su in-recruiting.com, Workable, SuccessFactors, Taleo, iCIMS, BambooHR.
+
 ## 1.2.0 — 2026-11-04
 
 - Nuovo: confronto tra i dipendenti dichiarati dall'azienda e le persone che su LinkedIn dicono di lavorarci. Se sono molto meno, il riquadro lo segnala.

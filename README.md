@@ -5,12 +5,12 @@ Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario per
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 1.2.0 (in prova)
+Versione: 1.3.0 (in prova)
 
 ## Scarica
 
-- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-1.2.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.2.0-chrome-brave-edge.zip)
-- **Firefox**: [annunci-fantasma-1.2.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.2.0-firefox.zip)
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-1.3.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.3.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-1.3.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.3.0-firefox.zip)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
@@ -19,13 +19,15 @@ Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai
 - **È una versione di prova.** Il semaforo segnala indizi, non dà sentenze: un annuncio rosso non è per forza una truffa, uno verde non è per forza serio. Leggi sempre i motivi.
 - **Chrome, Brave, Edge:** per gli aggiornamenti estrai il nuovo zip **sempre nella stessa cartella** (sovrascrivi i file) e premi "Ricarica" nella pagina delle estensioni. Se cambi cartella, il browser la tratta come un'estensione nuova e il diario delle candidature riparte da zero.
 - **Firefox:** l'estensione resta attiva solo fino alla chiusura del browser; alla riapertura va caricata di nuovo. Per renderla permanente deve essere firmata da Mozilla (è gratis): lo faremo quando la versione sarà stabile.
-- **Privacy:** l'estensione legge solo la pagina che stai guardando e non invia dati a nessuno. Diario, verifiche e stipendi visti restano nel tuo browser.
+- **Privacy:** l'estensione legge solo la pagina che stai guardando e non invia dati a nessuno. Diario, verifiche, stipendi visti e il testo del tuo CV restano nel tuo browser.
 
 ## Cosa ti dice su ogni annuncio
 
 - **Semaforo di rischio** con i motivi: età dell'annuncio, ripubblicazioni, candidati, retribuzione, chi pubblica (azienda o agenzia), condizioni poco serie (partita IVA o libera professione, provvigioni, richieste di soldi, prestazione occasionale, stage senza rimborso).
 - **L'azienda**: dipendenti, persone su LinkedIn, follower, settore e valutazione, quando il sito li mostra; confronto tra dipendenti dichiarati e persone su LinkedIn; più ricerche con un clic: *Dipendenti e fatturato ufficiali*, *Recensioni*, *Reddit*, *Trustpilot*, *Notizie* (assunzioni, licenziamenti, crisi).
 - **Stipendio**: quello dell'annuncio e quelli che hai già visto per lo stesso ruolo (lo storico cresce mentre navighi), più la ricerca dello stipendio medio del ruolo.
+- **Come ti candidi**: con quale programma l'azienda raccoglie le candidature (gli "ATS": Workday, Greenhouse, InRecruiting…), spiegato in parole semplici: serve un account? il modulo è lungo? cosa conviene fare? Più una spiegazione di cos'è un ATS e di come scrivere un CV che si legga bene.
+- **Il tuo CV e questo annuncio**: incolli una volta il testo del tuo CV (resta solo nel tuo browser) e su ogni annuncio vedi quali parole chiave dei requisiti hai già e quali ti mancano. Se una competenza la hai davvero, scrivila con le stesse parole dell'annuncio; se non la hai, non aggiungerla.
 - **Diario** delle candidature e **verifica** sul sito dell'azienda.
 - **Numero sull'icona** con il punteggio, colorato come il semaforo.
 

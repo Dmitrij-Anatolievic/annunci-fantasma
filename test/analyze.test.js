@@ -12,6 +12,7 @@ eval(pick('  const DAY', '  // Dati strutturati') + pick('  // Partita IVA come 
 // eslint-disable-next-line no-eval
 eval(pick('  function mergeEntry', '  function importData'));
 eval(pick('  const num = t =>', '  const google = '));
+eval(pick('  // --- Parole chiave dell', '  // ======================================================================\n  // Interfaccia'));
 
 const has = (r, text) => r.reasons.some(([, t]) => t.includes(text));
 let passed = 0;
@@ -148,6 +149,25 @@ test('Dipendenti: 51-200 e 5 su LinkedIn → solo informativo', () => {
 
 test('Dipendenti: 2-10 (piccola) → nessun confronto', () => {
   assert(employeeGap({ employees: '2-10', onLinkedIn: '0' }) === null);
+});
+
+test('Parole chiave: requisiti di un annuncio amministrativo', () => {
+  const ad = 'Descrizione. Requisiti: diploma di ragioneria, conoscenza della partita doppia, ottima conoscenza del pacchetto Office e di Excel, utilizzo di SAP, patente B. Cosa offriamo: contratto a tempo indeterminato.';
+  const k = adKeywords(ad);
+  assert(k.includes('partita doppia') && k.includes('pacchetto office') && k.includes('patente b') && k.includes('SAP') && k.includes('excel'));
+  assert(!k.includes('contratto') && !k.includes('indeterminato'));
+});
+
+test('Confronto CV: trova cosa c\'è e cosa manca', () => {
+  const ad = 'Requisiti: conoscenza di Excel e SAP, contabilità generale, patente B.';
+  const r = compareCv(ad, 'Impiegato amministrativo. Uso quotidiano di Excel. Contabilita generale e fatturazione.');
+  assert(r.have.includes('excel') && r.have.includes('contabilità'));
+  assert(r.miss.includes('SAP') && r.miss.includes('patente b'));
+});
+
+test('Confronto CV: "SAP" non trovato dentro "sapere"', () => {
+  const r = compareCv('Requisiti: SAP.', 'Voglia di sapere e imparare.');
+  assert(r.miss.includes('SAP'));
 });
 
 test('Truffa: provvigioni e corso a pagamento', () => {

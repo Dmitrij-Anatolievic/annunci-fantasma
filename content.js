@@ -1,4 +1,4 @@
-// Annunci Fantasma — v1.2.0
+// Annunci Fantasma — v1.3.0
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -235,7 +235,13 @@
     { re: /(^|\.)teamtailor\.com$/, name: 'Teamtailor', kind: 'ats' },
     { re: /(^|\.)recruitee\.com$/, name: 'Recruitee', kind: 'ats' },
     { re: /(^|\.)intervieweb\.it$/, name: 'InRecruiting', kind: 'ats' },
-    { re: /(^|\.)personio\.(de|com|it)$/, name: 'Personio', kind: 'ats' }
+    { re: /(^|\.)personio\.(de|com|it)$/, name: 'Personio', kind: 'ats' },
+    { re: /(^|\.)in-recruiting\.com$/, name: 'InRecruiting', kind: 'ats' },
+    { re: /(^|\.)workable\.com$/, name: 'Workable', kind: 'ats' },
+    { re: /(^|\.)successfactors\.(com|eu)$/, name: 'SAP SuccessFactors', kind: 'ats' },
+    { re: /(^|\.)taleo\.net$/, name: 'Oracle Taleo', kind: 'ats' },
+    { re: /(^|\.)icims\.com$/, name: 'iCIMS', kind: 'ats' },
+    { re: /(^|\.)bamboohr\.com$/, name: 'BambooHR', kind: 'ats' }
   ];
 
   function portalFor(host) { return PORTALS.find(p => p.re.test(host)) || null; }
@@ -289,6 +295,7 @@
       title: String(title).trim(),
       header: '',
       body,
+      kwText: ldText.length > 200 ? ldText : text,
       companyInfo: portal && portal.kind === 'agenzia' ? { agencySite: portal.name } : null
     };
   }
@@ -508,7 +515,7 @@
 
   // --- Esporta / importa: diario, verifiche e stipendi in un file JSON ---
 
-  const isOurKey = k => k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:');
+  const isOurKey = k => k === 'afcv' || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:');
 
   function exportData() {
     chrome.storage.local.get(null, all => {
@@ -603,6 +610,134 @@
     salary: t => google(`"${cleanTitle(t)}" stipendio medio RAL Italia`)
   };
 
+
+  // ======================================================================
+  // Come funziona la candidatura (ATS) — spiegato in parole semplici
+  // ======================================================================
+
+  // Fonti dei fatti qui sotto: documentazione dei produttori e guide per candidati (vedi README).
+  const ATS_INFO = [
+    { re: /myworkdayjobs\.com|myworkdaysite\.com/, name: 'Workday',
+      what: 'Programma usato soprattutto da grandi aziende. Ogni azienda ha il suo portale: di solito ti chiede di creare un account (email e password) valido solo per quell\'azienda.',
+      tips: ['Dopo aver caricato il CV controlla i campi compilati da soli (date, mansioni): spesso vanno corretti a mano.',
+        'Segnati email e password usate per questa azienda: per vedere lo stato della candidatura dovrai rientrare lì.'] },
+    { re: /greenhouse\.io/, name: 'Greenhouse',
+      what: 'Modulo breve su una sola pagina. L\'account non è obbligatorio.',
+      tips: ['Le domande aggiuntive del modulo le legge una persona: rispondi in modo mirato, non con frasi fatte.'] },
+    { re: /lever\.co/, name: 'Lever',
+      what: 'Modulo breve, di solito senza account.',
+      tips: ['Se c\'è un campo "informazioni aggiuntive", usalo per 3-4 righe che collegano la tua esperienza a questo annuncio.'] },
+    { re: /smartrecruiters\.com/, name: 'SmartRecruiters',
+      what: 'Modulo che può importare i tuoi dati dal CV o da LinkedIn.',
+      tips: ['Controlla quello che importa prima di inviare: a volte mescola esperienze e date.'] },
+    { re: /intervieweb\.it|in-recruiting\.com/, name: 'InRecruiting',
+      what: 'Programma italiano (gruppo Zucchetti), molto usato da aziende e agenzie in Italia. Spesso chiede di registrarti sul portale carriere dell\'azienda e di compilare il profilo campo per campo.',
+      tips: ['Compila tutti i campi del profilo, anche quelli che sembrano ripetere il CV: il selezionatore cerca proprio in quei campi.'] },
+    { re: /successfactors\.(com|eu)/, name: 'SAP SuccessFactors',
+      what: 'Programma usato da grandi aziende. Di solito richiede un account per azienda e un modulo lungo.',
+      tips: ['Tieni a portata di mano date precise di inizio e fine di ogni lavoro.'] },
+    { re: /taleo\.net|oraclecloud\.com\/hcmUI\/CandidateExperience/, name: 'Oracle (Taleo / Recruiting Cloud)',
+      what: 'Programma usato da grandi aziende. Di solito richiede un account e un modulo lungo.',
+      tips: ['Tieni a portata di mano date precise di inizio e fine di ogni lavoro.'] },
+    { re: /icims\.com/, name: 'iCIMS', what: 'Programma usato da grandi aziende, spesso con account e modulo in più passaggi.', tips: [] },
+    { re: /teamtailor\.com/, name: 'Teamtailor', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /recruitee\.com/, name: 'Recruitee', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /personio\.(de|com|it)/, name: 'Personio', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /workable\.com/, name: 'Workable', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /bamboohr\.com/, name: 'BambooHR', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] }
+  ];
+
+  const ATS_GENERAL = 'Un ATS è il programma con cui l\'azienda raccoglie e ordina le candidature. ' +
+    'Non è un robot che ti scarta da solo: legge il CV, ne estrae i dati, e il selezionatore cerca tra i candidati usando parole chiave. ' +
+    'Per questo conviene usare le stesse parole dell\'annuncio (se quelle competenze le hai davvero). ' +
+    'Il famoso "75% dei CV scartati dagli ATS" non ha fonti: viene da una pubblicità del 2012.';
+  const CV_TIPS = 'Per farti leggere bene: CV in PDF o Word con testo vero (non una foto o una scansione), ' +
+    'informazioni importanti fuori da tabelle, colonne e grafici, titoli semplici (Esperienze, Formazione, Competenze), date scritte sempre nello stesso modo.';
+
+  function detectApplication(adapter, header) {
+    const href = location.href;
+    const own = ATS_INFO.find(a => a.re.test(href));
+    if (own) return { kind: 'ats', ...own };
+    const links = [...document.querySelectorAll('a[href]')].map(a => a.href);
+    for (const a of ATS_INFO) {
+      if (links.some(h => a.re.test(h))) return { kind: 'ats', ...a, viaLink: true };
+    }
+    const portal = portalFor(location.hostname);
+    if (adapter && adapter.name === 'LinkedIn') {
+      if (/Candidatura semplice|Easy Apply/i.test(header)) return { kind: 'site', name: 'Candidatura semplice di LinkedIn',
+        what: 'La candidatura resta su LinkedIn: l\'azienda riceve il tuo profilo LinkedIn e il CV che alleghi.',
+        tips: ['Il profilo LinkedIn conta quanto il CV: titolo, competenze ed esperienze devono essere aggiornati.'] };
+      return { kind: 'unknown', name: 'Sito esterno',
+        what: 'Cliccando "Candidati" vai sul sito dell\'azienda. Quale programma usa lo vedrai lì: se è uno di quelli conosciuti, questo riquadro te lo spiega.', tips: [] };
+    }
+    if (adapter && adapter.name === 'Indeed') {
+      if (/sito dell.azienda|company site/i.test(header)) return { kind: 'unknown', name: 'Sito esterno',
+        what: 'La candidatura si fa sul sito dell\'azienda. Quale programma usa lo vedrai lì: se è uno di quelli conosciuti, questo riquadro te lo spiega.', tips: [] };
+      return { kind: 'site', name: 'Modulo di Indeed', what: 'La candidatura passa da Indeed, che inoltra il tuo CV all\'azienda.',
+        tips: ['Il CV caricato su Indeed è quello che vedono: tienilo aggiornato.'] };
+    }
+    if (portal && portal.kind === 'agenzia') return { kind: 'site', name: `Banca dati di ${portal.name}`,
+      what: 'La candidatura entra nella banca dati dell\'agenzia. Un selezionatore dell\'agenzia cerca tra i candidati per parole chiave e ti propone all\'azienda cliente.',
+      tips: ['Tieni il profilo aggiornato: possono chiamarti anche per altre offerte.'] };
+    return null;
+  }
+
+  // --- Parole chiave dell'annuncio a confronto con il tuo CV (tutto nel browser) ---
+  const STOP = new Set(('a ad al alla alle allo agli ai anche ancora che chi ci con come da dal dalla dalle dei del della delle dello degli di e ed è gli ha hai hanno il in io la le lo loro ma mi ne nei nel nella nelle non noi o per più può quale quali quando questa queste questi questo se si sia sono su sua sue sui sul sulla suo suoi tra tu un una uno vi voi ' +
+    'essere avere fare deve devono dovrà sarà saranno verrà verranno ogni tutto tutti tutte molto buona buone buon buono ottima ottime ottimo ottimi forte elevata elevato capacità conoscenza conoscenze esperienza esperienze anni anno almeno preferibilmente gradita gradito graditi requisiti requisito ' +
+    'azienda aziende società cliente clienti ricerca ricerchiamo cerchiamo cerca offriamo offre offerta inserimento candidato candidati candidata candidatura figura risorsa ruolo posizione attività lavoro lavorare settore team area ambito ufficio sede zona orario orari contratto tempo livello ccnl ' +
+    'annuncio annunci mansioni principali seguenti relative relativo nostro nostra nostri vostro proprio propria possesso completano profilo descrizione info informazioni dettagli luogo data ' +
+    'the and for with you your our are will have has from that this job role team work years experience skills ability knowledge strong good').split(/\s+/).map(w => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  const PHRASES = ['pacchetto office', 'power bi', 'patente b', 'problem solving', 'customer care', 'customer service', 'data entry',
+    'social media', 'google analytics', 'partita doppia', 'lingua inglese', 'inglese fluente', 'help desk', 'service desk',
+    'project management', 'public speaking', 'lavoro di squadra', 'team working', 'gestione del tempo', 'carrelli elevatori', 'muletto'];
+
+  const norm = t => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const stem = w => (w.length >= 6 ? w.slice(0, w.length - 2) : w);
+
+  function requirementsPart(text) {
+    const i = text.search(/requisiti|competenze richieste|cosa cerchiamo|profilo ricercato|il candidato ideale|requirements|qualifications/i);
+    if (i < 0) return text;
+    const rest = text.slice(i);
+    const j = rest.slice(30).search(/cosa offriamo|offriamo|si offre|benefit|what we offer/i);
+    return j > 0 ? rest.slice(0, j + 30) : rest;
+  }
+
+  function adKeywords(text, max = 14) {
+    const src = norm(requirementsPart(text).slice(0, 8000));
+    const found = [];
+    for (const p of PHRASES) if (src.includes(norm(p))) found.push(p);
+    const counts = new Map();
+    const shown = new Map();
+    const order = [];
+    const raw = requirementsPart(text).slice(0, 8000).match(/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9+#.]{1,}/g) || [];
+    for (let w of raw) {
+      w = w.replace(/\.+$/, '');
+      const isAcr = /[A-Z]/.test(w) && (/^[A-Z0-9+#]{2,4}$/.test(w) || /^(?=.*[0-9+#])[A-Z0-9+#]{2,6}$/.test(w));
+      const n = norm(w);
+      if (!isAcr && (n.length < 4 || STOP.has(n))) continue;
+      if (found.some(p => norm(p).split(' ').includes(n))) continue;
+      const k = isAcr ? w : n;
+      if (!counts.has(k)) { order.push(k); shown.set(k, isAcr ? w : w.toLowerCase()); }
+      counts.set(k, (counts.get(k) || 0) + (isAcr ? 2 : 1));
+    }
+    const words = order.slice().sort((a, b) => counts.get(b) - counts.get(a) || order.indexOf(a) - order.indexOf(b));
+    return [...found, ...words.map(k => shown.get(k))].slice(0, max);
+  }
+
+  function inCv(term, cvNorm) {
+    const t = norm(term);
+    if (t.includes(' ')) return cvNorm.includes(t);
+    if (/^[a-z0-9+#]{2,6}$/.test(t) && term === term.toUpperCase()) return new RegExp('(^|[^a-z0-9])' + t.replace(/[+#.]/g, '\\$&') + '($|[^a-z0-9])').test(cvNorm);
+    return cvNorm.includes(stem(t));
+  }
+
+  function compareCv(adText, cv) {
+    const cvNorm = norm(cv || '');
+    const terms = adKeywords(adText);
+    return { have: terms.filter(t => inCv(t, cvNorm)), miss: terms.filter(t => !inCv(t, cvNorm)) };
+  }
+
   // ======================================================================
   // Interfaccia
   // ======================================================================
@@ -644,8 +779,27 @@
     setTimeout(() => n.remove(), 5000);
   }
 
+  function cvEditor(panel, text, done) {
+    if (panel.querySelector('#af-cv-box')) return;
+    const box = el('div', 'margin-top:6px');
+    box.id = 'af-cv-box';
+    const ta = el('textarea', 'width:100%;height:120px;box-sizing:border-box;font:12px system-ui,sans-serif');
+    ta.value = text;
+    ta.placeholder = 'Apri il tuo CV, seleziona tutto il testo (Ctrl+A), copialo e incollalo qui.';
+    box.appendChild(ta);
+    box.appendChild(button('Salva', async () => {
+      const v = ta.value.trim();
+      if (v) await store.set('afcv', { text: v.slice(0, 30000), date: new Date().toISOString().slice(0, 10) });
+      else await new Promise(res => chrome.storage.local.remove('afcv', res));
+      done();
+    }));
+    box.appendChild(button('Annulla', () => box.remove()));
+    panel.appendChild(box);
+    ta.focus();
+  }
+
   async function render(ctx) {
-    const { site, company, title, key, result, companyInfo } = ctx;
+    const { site, company, title, key, result, companyInfo, app, adText } = ctx;
     const again = () => render(ctx);
 
     let panel = document.getElementById(PANEL_ID);
@@ -754,6 +908,39 @@
     }
     panel.appendChild(button('Stipendi del ruolo', () => open(SEARCHES.salary(title)), 'Cerca lo stipendio medio di questo ruolo'));
 
+    // Come funziona la candidatura
+    section(panel, 'Come ti candidi');
+    if (app) {
+      panel.appendChild(el('div', 'font-size:12px;margin-top:2px', `${app.kind === 'ats' ? 'Programma usato dall\'azienda: ' : ''}${app.name}`));
+      small(panel, app.what);
+      for (const t of app.tips || []) small(panel, '→ ' + t);
+    } else {
+      small(panel, 'Da questa pagina non si capisce con quale programma l\'azienda raccoglie le candidature.');
+    }
+    const more = el('details', 'margin-top:4px;font-size:12px;color:#555');
+    more.appendChild(el('summary', 'cursor:pointer;color:#0a66c2', 'Cos\'è un ATS e come farsi leggere bene'));
+    more.appendChild(el('div', 'margin-top:4px', ATS_GENERAL));
+    more.appendChild(el('div', 'margin-top:4px', CV_TIPS));
+    panel.appendChild(more);
+
+    // Il tuo CV a confronto con l'annuncio
+    section(panel, 'Il tuo CV e questo annuncio');
+    const cv = await store.get('afcv');
+    if (cv && cv.text) {
+      const cmp = compareCv(adText || '', cv.text);
+      if (!cmp.have.length && !cmp.miss.length) {
+        small(panel, 'In questo annuncio non ho trovato parole chiave da confrontare.');
+      } else {
+        if (cmp.have.length) small(panel, '✓ Già nel tuo CV: ' + cmp.have.join(', '));
+        if (cmp.miss.length) small(panel, '✗ Non nel tuo CV: ' + cmp.miss.join(', '));
+        small(panel, 'Se queste cose le sai fare davvero, scrivile con le stesse parole dell\'annuncio. Non aggiungere quelle che non hai: al colloquio si vede.');
+      }
+      panel.appendChild(button('Cambia CV', () => { cvEditor(panel, cv.text, again); }, 'Incolla di nuovo il testo del tuo CV'));
+    } else {
+      small(panel, 'Incolla una volta il testo del tuo CV: su ogni annuncio vedrai quali parole chiave ti mancano. Il CV resta solo nel tuo browser.');
+      panel.appendChild(button('Incolla il tuo CV', () => { cvEditor(panel, '', again); }));
+    }
+
     // Diario
     section(panel, 'Il tuo diario');
     small(panel, `Con questa azienda: ${nApplied} candidature, ${diary.replies} risposte`);
@@ -843,7 +1030,9 @@
       title: info.title,
       key: site + ':' + key,
       result: analyze(info, ld),
-      companyInfo: info.companyInfo
+      companyInfo: info.companyInfo,
+      app: detectApplication(adapter, info.header || ''),
+      adText: info.kwText || ((info.header || '') + '\n' + (info.body || ''))
     });
   }
 
