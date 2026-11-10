@@ -1,4 +1,4 @@
-// Annunci Fantasma — v1.5.0
+// Annunci Fantasma — v2.0.0
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -16,11 +16,20 @@
   let minimized = false;
   let retryKey = '';
   let retries = 0;
+  let failKey = '';
+  let fails = 0;
+  let tickN = 0;
+  let ui = { minimized: false, open: { 'L\'azienda': true } };
 
-  window.__AF_FORCE = () => { window.__AF_MANUAL = true; lastKey = ''; tick(); };
+  window.__AF_FORCE = () => { window.__AF_MANUAL = true; lastKey = ''; fails = 0; tick(); };
 
   // Lo stato "ridotto/espanso" del riquadro viene ricordato
-  try { chrome.storage.local.get('afui', d => { minimized = !!(d && d.afui && d.afui.minimized); }); } catch (e) { /* ignora */ }
+  try {
+    chrome.storage.local.get('afui', d => {
+      if (d && d.afui) { minimized = !!d.afui.minimized; if (d.afui.open) ui.open = d.afui.open; }
+    });
+  } catch (e) { /* ignora */ }
+  const saveUi = () => { try { chrome.storage.local.set({ afui: { minimized, open: ui.open } }); } catch (e) { /* ignora */ } };
 
   // ======================================================================
   // Utilità comuni
@@ -47,7 +56,10 @@
   }
 
   // Dati strutturati schema.org/JobPosting (li usano molti portali e quasi tutti i siti carriere aziendali)
+  let ldCache = { href: '', n: -1, v: null };
   function readJobPostingLD() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    if (ldCache.href === location.href && ldCache.n === scripts.length) return ldCache.v;
     const found = [];
     const visit = o => {
       if (!o || typeof o !== 'object') return;
@@ -56,10 +68,11 @@
       if (t === 'JobPosting' || (Array.isArray(t) && t.includes('JobPosting'))) found.push(o);
       if (o['@graph']) visit(o['@graph']);
     };
-    for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    for (const s of scripts) {
       try { visit(JSON.parse(s.textContent)); } catch (e) { /* JSON non valido: ignora */ }
     }
-    return found[0] || null;
+    ldCache = { href: location.href, n: scripts.length, v: found[0] || null };
+    return ldCache.v;
   }
 
   // Primo nodo di testo che coincide esattamente con un testo dato (più veloce che scorrere tutti gli elementi)
@@ -278,6 +291,11 @@
   }
 
   function genericRead(portal) {
+    // Controlli a costo zero prima di leggere il testo della pagina (che è l'operazione lenta)
+    if (!window.__AF_MANUAL && !readJobPostingLD()) {
+      if (portal && (!portal.detail || !portal.detail.test(location.pathname))) return null;
+      if (!portal && !/(job|jobs|lavoro|offert|annunc|vacanc|posizion|career|carriere|position|opening)/i.test(location.pathname + location.search)) return null;
+    }
     const root = document.querySelector('main') || document.querySelector('article') || document.body;
     const text = stripFooter(root.innerText || '');
     if (!window.__AF_MANUAL && !looksLikeJobPage(text, portal)) return null;
@@ -385,6 +403,16 @@
     return false;
   }
 
+  // Formule che sostituiscono la cifra
+  const VAGUE_PAY_RE = /(retribuzione|compenso|stipendio|ral|inquadramento)[^.\n]{0,40}(commisurat[aoi] all[ae']\s?(esperienz[ae]|competenz[ae]|seniority|capacit[aà])|da (definire|concordare|discutere|valutare)|in (base|linea) (all[ae']|con)\s?[^.\n]{0,25}(esperienz[ae]|profilo|seniority))/i;
+  // Truffe del lavoro online: guadagni facili, lavoretti "a compito"
+  const EASY_RE = /guadagn\w+ (facil\w+|extra|subito|da casa|sicur\w+|immediat\w+)|soldi facili|(fino a|oltre)\s+€?\s?\d[\d.]*\s?(€|euro)?\s+al (giorno|dì)|mett\w+ (mi piace|like)|(scrivere|lasciare) recensioni[^.\n]{0,30}(pagat|retribuit|compens)|pagat[oi] (per|a) (ogni )?(compito|task|clic|click)|basta (uno|il tuo|un) (smartphone|cellulare|telefono)/i;
+  const DOCS_RE = /(invi\w+|mand\w+|alleg\w+|forni\w+|trasmett\w+)[^.\n]{0,60}(documento d.identit[aà]|carta d.identit[aà]|codice fiscale|\biban\b|coordinate bancarie|tessera sanitaria|estremi (del conto|bancari))/i;
+  const CHAT_RE = /(contatt\w+|scriv\w+|candidat\w+|invi\w+|mand\w+|rispond\w+|messaggi\w*)[^.\n]{0,60}(whatsapp|telegram)|wa\.me\/|\bt\.me\/|(whatsapp|telegram)\s*(al|:)?\s*(\+?\d[\d\s]{7,})/i;
+  const FREE_MAIL_RE = /[\w.+-]+@(gmail|hotmail|libero|yahoo|outlook|virgilio|live|icloud|tiscali|alice)\.[a-z.]{2,6}/i;
+  const UNPAID_RE = /(giornat\w+ di prova|periodo di prova|settiman\w+ di prova|\bprova)[^.\n]{0,30}(non retribuit\w+|gratuit\w+|senza (compenso|retribuzione))|(formazione|affiancamento|stage|tirocinio)[^.\n]{0,30}non retribuit\w+|solo rimborso spese|a titolo gratuito|non (è )?(previst[ao]|prevede) (alcun[ao]? )?(retribuzione|compenso)/i;
+  const EVERGREEN_RE = /siamo sempre alla ricerca|sempre alla ricerca di (nuov|talent|figur|person|profil)|(per|in vista di) (eventuali )?futur[ei] (opportunit|selezion|necessit|esigenz|apertur|inseriment)|eventuali future|talent pool|bacino di candidat|banca dati (di )?(cv|curricul|candidat)|non (abbiamo|ci sono) posizioni aperte/i;
+
   const SALARY_RE = /(€|EUR|USD|\$)\s?\d|\d[\d.,]*\s?[Kk]?\s?(€|EUR|USD|euro\b)|\/\s?(yr|hr)\b|\d[\d.,]*\s*(lordi|netti)?\s*(all.anno|all.ora|al mese|mensili)|\bRAL\b\s*:?\s*\d/i;
 
   function salaryText(info, ld) {
@@ -467,8 +495,11 @@
     // --- Retribuzione ---
     const asksMoney = /(corso|kit|materiale|formazione)\s+a pagamento|quota (di )?iscrizione|investimento iniziale/i.test(body);
     const salary = !asksMoney && ((ld && ld.baseSalary) || SALARY_RE.test(header || body.slice(0, 4000)));
+    const vague = body.match(VAGUE_PAY_RE);
     if (salary) add(0, 'verde', 'Retribuzione indicata');
-    else add(1, 'giallo', 'Retribuzione non indicata');
+    else add(1, 'giallo', 'Retribuzione non indicata' + (vague ? `, solo una formula vaga («${vague[0]}»)` : '') +
+      ': dal 7 giugno 2026 gli annunci devono riportare stipendio o fascia (D.Lgs. 96/2026)');
+    if (/\bC\.?C\.?N\.?L\b|contratto collettivo/i.test(header + '\n' + body)) add(0, 'verde', 'Contratto collettivo (CCNL) indicato');
 
     // --- Segnali specifici dei siti ---
     if (/Risposte gestite esternamente|Responses managed off LinkedIn/i.test(header)) add(1, 'giallo', 'Candidatura gestita fuori dal sito');
@@ -498,8 +529,21 @@
     if ((/stage|tirocinio|internship/i.test(info.title || '') || /INTERN/.test(empType)) && !salary) add(1, 'giallo', 'Stage o tirocinio senza rimborso indicato');
     if (body && body.replace(/\s+/g, ' ').length < 400) add(1, 'giallo', 'Descrizione molto scarna');
 
+    // --- Segnali di truffa e di annuncio "vetrina" ---
+    let scam = asksMoney;
+    if (affirmed(EASY_RE, (info.title || '') + '\n' + body)) { scam = true; add(2, 'rosso', 'Promette guadagni facili o pagati "a compito": è lo schema tipico delle truffe del lavoro online'); }
+    if (affirmed(DOCS_RE, body)) { scam = true; add(2, 'rosso', 'Chiede documenti o dati bancari già nell\'annuncio: non inviarli mai prima di un contratto'); }
+    if (CHAT_RE.test(body)) add(1, 'giallo', 'Ti fa passare su WhatsApp o Telegram: succede con piccole attività, ma è anche il canale preferito dei finti selezionatori');
+    const mail = body.match(FREE_MAIL_RE);
+    if (mail && !ci.privateUser) add(1, 'giallo', `Candidatura a un indirizzo email personale (@${mail[1]}): un'azienda di solito usa il proprio dominio`);
+    if (affirmed(UNPAID_RE, body)) add(2, 'rosso', 'Prova o periodo di lavoro non pagato');
+    if (affirmed(EVERGREEN_RE, body)) add(2, 'rosso', 'Non sembra una posizione aperta adesso: raccolgono curriculum per il futuro');
+    if (!agency && !ci.privateUser && /^azienda (non indicata|riservata|confidenziale|anonima)$|^(riservat[ao]|confidenziale)$/i.test((info.company || '').trim())) {
+      add(1, 'giallo', 'Non risulta chi pubblica l\'annuncio. Gli annunci anonimi sono vietati (art. 9 D.Lgs. 276/2003): chiedi il nome dell\'azienda prima di mandare il CV');
+    }
+
     score = Math.max(0, score);
-    return { score, reasons, salary: salary ? salaryText(info, ld) : '', days };
+    return { score, reasons, salary: salary ? salaryText(info, ld) : '', days, scam };
   }
 
   // ======================================================================
@@ -1012,8 +1056,32 @@
 
   const open = url => window.open(url, '_blank', 'noopener');
 
-  function section(panel, text) {
-    panel.appendChild(el('div', 'margin-top:8px;border-top:1px solid #eee;padding-top:6px;color:#444;font-weight:600', text));
+  function section(panel, text, hint) {
+    const d = el('div', 'margin-top:8px;border-top:1px solid #eee;padding-top:6px;color:#444;font-weight:600', text);
+    d.dataset.afSec = text;
+    if (hint) d.dataset.afHint = hint;
+    panel.appendChild(d);
+  }
+
+  // Trasforma ogni sezione in un blocco richiudibile; ricorda quali hai lasciato aperti
+  function collapseSections(panel) {
+    let cur = null;
+    for (const k of [...panel.children]) {
+      if (k.dataset && k.dataset.afSec) {
+        const name = k.dataset.afSec;
+        cur = el('details', 'margin-top:6px;border-top:1px solid #eee;padding-top:5px');
+        cur.dataset.af = name;
+        const sum = el('summary', 'cursor:pointer;color:#444;font-weight:600', name);
+        if (k.dataset.afHint) sum.appendChild(el('span', 'font-weight:400;color:#888;font-size:12px', ' — ' + k.dataset.afHint));
+        cur.appendChild(sum);
+        cur.open = !!ui.open[name];
+        panel.insertBefore(cur, k);
+        k.remove();
+        (c => c.addEventListener('toggle', () => { ui.open[name] = c.open; saveUi(); }))(cur);
+      } else if (cur && !(k.dataset && k.dataset.afFoot)) {
+        cur.appendChild(k);
+      }
+    }
   }
 
   function small(panel, text) {
@@ -1044,7 +1112,7 @@
       done();
     }));
     box.appendChild(button('Annulla', () => box.remove()));
-    panel.appendChild(box);
+    (panel.querySelector('details[data-af^="Il tuo CV"]') || panel).appendChild(box);
     ta.focus();
   }
 
@@ -1153,7 +1221,7 @@
     toggle.title = minimized ? 'Espandi' : 'Riduci';
     toggle.addEventListener('click', () => {
       minimized = !minimized;
-      chrome.storage.local.set({ afui: { minimized } });
+      saveUi();
       again();
     });
     const close = el('button', 'border:none;background:none;cursor:pointer;font-size:16px;color:#666', '×');
@@ -1178,8 +1246,17 @@
     }
     panel.appendChild(ul);
 
+    // Cosa fare, in una riga
+    const advice = result.scam
+      ? 'Possibile truffa: non inviare soldi, documenti o dati bancari. Se ti hanno già contattato, segnala.'
+      : level[0] === 'rosso' ? 'Molti segnali negativi: candidati solo se riesci a verificare che il posto esiste davvero.'
+      : level[0] === 'giallo' ? 'Qualche dubbio: controlla i punti gialli e l\'azienda prima di investirci tempo.'
+      : 'Nessun segnale forte. Un controllo sull\'azienda, qui sotto, resta una buona abitudine.';
+    panel.appendChild(el('div', `margin-top:6px;padding:5px 7px;border-radius:6px;font-size:12px;background:${result.scam || level[0] === 'rosso' ? '#fdecea' : level[0] === 'giallo' ? '#fff8e1' : '#edf7ed'}`, advice));
+    if (result.scam) panel.appendChild(button('Segnala alla Polizia Postale', () => open('https://www.commissariatodips.it/'), 'Apre il sito del Commissariato di P.S. online, dove si segnalano le truffe'));
+
     // L'azienda: dati letti dalla pagina + ricerche con un clic
-    section(panel, 'L\'azienda');
+    section(panel, 'L\'azienda', reg || rev ? 'dati letti ✓' : 'da verificare');
     const ci = companyInfo || {};
     const gap = employeeGap(ci);
     const facts = [];
@@ -1255,7 +1332,7 @@
     }
 
     // Diario
-    section(panel, 'Il tuo diario');
+    section(panel, 'Il tuo diario', nApplied ? `${nApplied} candidature, ${diary.replies} risposte` : '');
     small(panel, `Con questa azienda: ${nApplied} candidature, ${diary.replies} risposte`);
     const already = diary.applied.some(a => a.job === key);
     panel.appendChild(button(already ? 'Candidatura già segnata' : 'Mi sono candidato', async () => {
@@ -1288,8 +1365,11 @@
     panel.appendChild(button('Esporta', exportData, 'Scarica diario, verifiche e stipendi visti'));
     panel.appendChild(button('Importa', () => importData(again), 'Carica un file esportato e uniscilo ai dati attuali'));
 
-    panel.appendChild(el('div', 'margin-top:6px;font-size:11px;color:#888',
-      'Indice di rischio, non un verdetto. I dati restano nel tuo browser.'));
+    const foot = el('div', 'margin-top:6px;font-size:11px;color:#888',
+      'Indice di rischio, non un verdetto. I dati restano nel tuo browser.');
+    foot.dataset.afFoot = '1';
+    panel.appendChild(foot);
+    collapseSections(panel);
   }
 
   // ======================================================================
@@ -1297,6 +1377,8 @@
   // ======================================================================
 
   function tick() {
+    if (document.hidden) return; // scheda in secondo piano: nessun lavoro
+    tickN++;
     try { step(); } catch (e) { console.warn('Annunci Fantasma:', e); }
   }
 
@@ -1329,6 +1411,8 @@
     const key = adapter.key();
     if (!key) return;
     if (key === lastKey) return; // già analizzato (se l'hai chiuso, resta chiuso)
+    // Pagina che dopo vari tentativi non risulta un annuncio: si riprova di rado invece che ogni secondo e mezzo
+    if (key === failKey && fails >= 8 && tickN % 8 !== 0) return;
 
     // Nasconde il riquadro mentre legge la pagina, così il suo testo non viene analizzato
     const panelEl = document.getElementById(PANEL_ID);
@@ -1336,6 +1420,8 @@
     let info;
     try { info = adapter.read(); } finally { if (panelEl) panelEl.style.display = ''; }
     if (!info) {
+      if (key !== failKey) { failKey = key; fails = 0; }
+      fails++;
       // Sui portali, una pagina che non è un annuncio non mostra il riquadro
       if (adapter === portals) clearPanel();
       return;
@@ -1365,5 +1451,6 @@
   }
 
   setInterval(tick, 1500);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
   tick();
 })();

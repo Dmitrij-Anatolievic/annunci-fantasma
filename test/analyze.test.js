@@ -246,6 +246,56 @@ test('Pagamenti: 2 lamentele → rosso', () => {
   assert(paymentCheck({ neg: 2, pos: 5 })[0][1] === 'rosso');
 });
 
+test('Stipendio assente: cita l\'obbligo di legge e la formula vaga', () => {
+  const r = analyze({ title: 'Impiegato', header: '', body: long + ' Retribuzione commisurata all\'esperienza.' }, null);
+  assert(has(r, 'D.Lgs. 96/2026') && has(r, 'formula vaga'));
+});
+
+test('Truffa "a compito": guadagni facili mettendo like → scam', () => {
+  const r = analyze({ title: 'Lavoro da casa', header: '', body: long + ' Guadagni facili: basta uno smartphone, devi solo mettere mi piace ai video.' }, null);
+  assert(r.scam === true && has(r, 'truffe'));
+});
+
+test('Documenti e IBAN chiesti nell\'annuncio → scam', () => {
+  const r = analyze({ title: 'Addetto', header: '', body: long + ' Inviare copia del documento d\'identità e IBAN per la registrazione.' }, null);
+  assert(r.scam === true && has(r, 'documenti'));
+});
+
+test('WhatsApp: segnale giallo, non truffa da solo', () => {
+  const r = analyze({ title: 'Cameriere', header: '', body: long + ' Inviare CV su WhatsApp al 333 1234567.' }, null);
+  assert(has(r, 'WhatsApp') && !r.scam);
+});
+
+test('Email personale per candidarsi → segnale', () => {
+  const r = analyze({ title: 'Segretaria', header: '', body: long + ' Inviare CV a studio.rossi@gmail.com' }, null);
+  assert(has(r, '@gmail'));
+});
+
+test('"Formazione gratuita" è un vantaggio, non lavoro non pagato', () => {
+  const r = analyze({ title: 'Operatore', header: '', body: long + ' Offriamo formazione gratuita e affiancamento.' }, null);
+  assert(!has(r, 'non pagato'));
+});
+
+test('"Giornata di prova non retribuita" → segnale rosso', () => {
+  const r = analyze({ title: 'Barista', header: '', body: long + ' Prevista giornata di prova non retribuita.' }, null);
+  assert(has(r, 'non pagato'));
+});
+
+test('Annuncio vetrina: "per future selezioni" → segnale', () => {
+  const r = analyze({ title: 'Varie figure', header: '', body: long + ' Raccogliamo candidature per eventuali future selezioni.' }, null);
+  assert(has(r, 'per il futuro'));
+});
+
+test('Annuncio normale: nessun segnale di truffa o vetrina', () => {
+  const r = analyze({ title: 'Impiegato amministrativo', company: 'Rossi Srl', header: '3 giorni fa', body: long + ' Contratto a tempo indeterminato, CCNL Commercio, RAL 26.000 €. Contattaci tramite il modulo.' }, null);
+  assert(!r.scam && !has(r, 'WhatsApp') && !has(r, 'futuro') && !has(r, 'anonimi') && has(r, 'CCNL'));
+});
+
+test('Azienda non indicata → richiamo al divieto di annunci anonimi', () => {
+  const r = analyze({ title: 'Impiegato', company: 'Azienda non indicata', header: '', body: long }, null);
+  assert(has(r, 'anonimi'));
+});
+
 test('Truffa: provvigioni e corso a pagamento', () => {
   const r = analyze({ header: '', body: 'Guadagni illimitati! Corso a pagamento di 200 euro. Lavoro a provvigione.' }, null);
   assert(has(r, 'Ti chiedono di pagare'));

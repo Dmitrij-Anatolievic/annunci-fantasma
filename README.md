@@ -5,12 +5,12 @@ Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario per
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 1.5.0 (in prova)
+Versione: 2.0.0 (in prova)
 
 ## Scarica
 
-- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-1.5.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.5.0-chrome-brave-edge.zip)
-- **Firefox**: [annunci-fantasma-1.5.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-1.5.0-firefox.zip)
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.0.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.0.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-2.0.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.0.0-firefox.zip)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
@@ -82,7 +82,7 @@ Se l'analisi non parte da sola: **Dettagli** dell'estensione → **Accesso ai si
 | Non accetta più candidature | +3 |
 | Scaduto secondo i dati dell'annuncio ma ancora online | +2 |
 | Più di 100 candidati e aperto da più di 14 giorni | +1 |
-| Retribuzione non indicata | +1 |
+| Retribuzione non indicata (obbligatoria dal 7 giugno 2026, D.Lgs. 96/2026) | +1 |
 | Candidatura gestita fuori dal sito | +1 |
 | Contratto di collaborazione invece che da dipendente | +1 |
 | Pubblicato da agenzia o società di selezione (azienda finale non indicata) | +1 |
@@ -96,6 +96,13 @@ Se l'analisi non parte da sola: **Dettagli** dell'estensione → **Accesso ai si
 | Dati ufficiali: 10 o più requisiti diversi per un'azienda con meno di 10 dipendenti (possibile tuttofare) | +1 |
 | Dati ufficiali: perdita e fatturato in calo | +1 |
 | Annuncio di un privato su Subito | +1 |
+| Guadagni facili o lavoretti "a compito" (possibile truffa) | +2 |
+| Documenti o dati bancari chiesti già nell'annuncio (possibile truffa) | +2 |
+| Prova o periodo di lavoro non pagato | +2 |
+| Annuncio "vetrina": raccolgono curriculum per il futuro | +2 |
+| Ti fa passare su WhatsApp o Telegram | +1 |
+| Candidatura a un'email personale (@gmail ecc.) | +1 |
+| Annuncio anonimo (vietato dall'art. 9 D.Lgs. 276/2003) | +1 |
 | Recensioni: 2 o più parlano di stipendi in ritardo o non pagati (una sola: +1) | +2 |
 | Compenso a provvigione o "guadagni illimitati" | +2 |
 | Ti chiedono di pagare (corso, kit, iscrizione) | +3 |

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.0.0 — 2026-11-10
+
+Revisione generale, partita da quello che chiede in rete chi cerca lavoro (truffe via chat, annunci vetrina, stipendi non dichiarati).
+
+**Nuovi segnali**
+- Stipendio: se manca, il riquadro ricorda che dal 7 giugno 2026 è obbligatorio indicarlo negli annunci (D.Lgs. 96/2026) e riporta la formula vaga usata al suo posto ("commisurata all'esperienza", "da definire"). Segnala in verde quando il CCNL è indicato.
+- Truffe del lavoro online: guadagni facili, lavoretti "a compito" (mettere like, recensioni pagate), richiesta di documenti o IBAN già nell'annuncio. In questi casi compare l'avviso "Possibile truffa" e il pulsante per segnalare alla Polizia Postale.
+- Passaggio su WhatsApp o Telegram e candidatura a un'email personale (@gmail ecc.).
+- Prova o periodo di lavoro non pagato.
+- Annuncio "vetrina": raccolta di curriculum per il futuro, non una posizione aperta.
+- Annuncio anonimo: richiamo al divieto dell'art. 9 D.Lgs. 276/2003.
+
+**Riquadro più leggibile**
+- Sotto i segnali c'è una riga "cosa fare" in parole semplici.
+- Le sezioni (azienda, stipendio, candidatura, CV, diario…) sono richiudibili e il riquadro ricorda quali tieni aperte.
+
+**Più leggero**
+- Nessun lavoro quando la scheda è in secondo piano.
+- Le pagine che non sono annunci vengono scartate senza leggerne il testo; dopo alcuni tentativi il controllo rallenta.
+- I dati strutturati della pagina vengono letti una volta sola.
+
 ## 1.5.0 — 2026-11-05
 
 - Nuovo: **Pagano puntuali?** Il pulsante apre le recensioni dei dipendenti su stipendio e retribuzione (su Indeed con il filtro "Retribuzione e benefit"). Il riquadro le legge, conta quante parlano di stipendi in ritardo, arretrati o non pagati e quante di pagamenti puntuali, mostra qualche frase e il voto "Retribuzione e benefit". Più pagine lette si sommano.
