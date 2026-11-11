@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0 — 2026-11-11
+
+- Nuovo: **Aggiornamenti**. L'estensione controlla da sola se su GitHub c'è una versione nuova e lo segnala in cima al riquadro.
+- Il pulsante **Aggiorna** scarica il pacchetto nella cartella Download; dopo averlo estratto nella cartella dell'estensione, **Ricarica estensione** la riavvia senza passare dalla pagina delle estensioni. Diario e dati restano.
+- Nuovi permessi: "downloads" (per scaricare l'aggiornamento) e lettura di raw.githubusercontent.com (per sapere qual è l'ultima versione). Nessun altro dato esce dal browser.
+
 ## 2.0.0 — 2026-11-10
 
 Revisione generale, partita da quello che chiede in rete chi cerca lavoro (truffe via chat, annunci vetrina, stipendi non dichiarati).

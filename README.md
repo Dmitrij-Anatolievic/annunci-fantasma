@@ -5,12 +5,12 @@ Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario per
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 2.0.0 (in prova)
+Versione: 2.1.0 (in prova)
 
 ## Scarica
 
-- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.0.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.0.0-chrome-brave-edge.zip)
-- **Firefox**: [annunci-fantasma-2.0.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.0.0-firefox.zip)
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.1.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.1.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-2.1.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.1.0-firefox.zip)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
@@ -71,6 +71,15 @@ Se l'analisi non parte da sola: **Dettagli** dell'estensione → **Accesso ai si
 2. **Carica componente aggiuntivo temporaneo** e scegli il file `manifest.json` dentro la cartella estratta dallo zip Firefox.
 3. In Firefox un'estensione caricata così resta attiva fino alla chiusura del browser. Per installarla in modo permanente va firmata gratuitamente da Mozilla (addons.mozilla.org, anche come estensione non pubblica).
 4. Se l'analisi non parte: menu Estensioni → Annunci Fantasma → **Consenti sempre** sui siti di lavoro.
+
+### Aggiornare
+
+Dalla versione 2.1.0 l'estensione controlla da sola se c'è una versione nuova e lo scrive in cima al riquadro. Nella sezione **Aggiornamenti** del riquadro:
+
+- **Chrome, Brave, Edge**: premi **Aggiorna** (lo zip finisce nella cartella Download), estrailo nella cartella dove hai installato l'estensione sovrascrivendo i file, poi premi **Ricarica estensione** e ricarica la pagina. Non serve disinstallare: diario e dati restano.
+- **Firefox**: premi **Aggiorna** e carica il file scaricato da `about:debugging` come la prima volta.
+
+Un aggiornamento del tutto automatico non è possibile finché l'estensione non sta in uno store: Chrome, su Windows e Mac, accetta estensioni fuori dal Chrome Web Store solo in modalità sviluppatore, e queste non si aggiornano da sole; Firefox le aggiorna da solo solo se sono firmate da Mozilla.
 
 ## Segnali e punteggio
 

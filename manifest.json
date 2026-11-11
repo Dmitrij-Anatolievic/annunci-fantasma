@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Annunci Fantasma",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Semaforo di rischio sugli annunci di lavoro: annunci fantasma e condizioni poco serie, scheda azienda, diario. Nessun dato inviato.",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "downloads"
   ],
   "icons": {
     "16": "icons/icon16.png",
@@ -70,5 +71,8 @@
   ],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "host_permissions": [
+    "https://raw.githubusercontent.com/*"
+  ]
 }

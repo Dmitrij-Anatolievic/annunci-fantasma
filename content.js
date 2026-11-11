@@ -1,4 +1,4 @@
-// Annunci Fantasma — v2.0.0
+// Annunci Fantasma — v2.1.0
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -1160,6 +1160,48 @@
     }
   }
 
+
+  // ======================================================================
+  // Aggiornamenti
+  // ======================================================================
+  const ask = msg => new Promise(res => { try { chrome.runtime.sendMessage(msg, r => { void chrome.runtime.lastError; res(r); }); } catch (e) { res(null); } });
+
+  function updateSteps(box, upd) {
+    box.textContent = '';
+    if (upd.firefox) {
+      small(box, 'Firefox: apri la pagina about:debugging#/runtime/this-firefox, premi "Carica componente aggiuntivo temporaneo" e scegli il file appena scaricato. Poi ricarica la pagina dell\'annuncio.');
+      return;
+    }
+    small(box, '1. Il file è nella cartella Download. Aprilo ed estrai tutto nella cartella dove hai installato l\'estensione, sovrascrivendo i file.');
+    small(box, '2. Premi "Ricarica estensione" qui sotto, poi ricarica la pagina dell\'annuncio. Diario e dati restano.');
+    box.appendChild(button('Ricarica estensione', () => ask({ type: 'af-reload' }), 'Rilegge i file della cartella dell\'estensione'));
+  }
+
+  function updateBlock(panel, upd, again) {
+    const box = el('div', 'margin-top:2px');
+    panel.appendChild(box);
+    const draw = u => {
+      box.textContent = '';
+      if (!u) { small(box, 'Versione installata: ' + chrome.runtime.getManifest().version); }
+      else if (u.error) small(box, u.error);
+      else if (u.available) {
+        small(box, `Versione installata ${u.current}, disponibile ${u.latest}.`);
+        for (const n of (u.notes || []).slice(0, 4)) small(box, '· ' + n);
+      } else small(box, `Versione installata ${u.current}: è la più recente.`);
+      if (u && u.available) {
+        box.appendChild(button('Aggiorna', async () => {
+          const r = await ask({ type: 'af-download-update' });
+          const steps = el('div', 'margin-top:4px');
+          box.appendChild(steps);
+          if (r && r.ok) updateSteps(steps, u);
+          else small(steps, 'Scaricamento non riuscito' + (r && r.error ? ': ' + r.error : '') + '. Puoi scaricarlo dalla pagina GitHub del progetto.');
+        }, 'Scarica la nuova versione'));
+      }
+      box.appendChild(button('Controlla aggiornamenti', async () => { small(box, 'Controllo…'); draw(await ask({ type: 'af-check-update', force: true })); }));
+    };
+    draw(upd);
+  }
+
   async function render(ctx) {
     const { site, company, title, key, result, companyInfo, app, adText } = ctx;
     const again = () => render(ctx);
@@ -1233,6 +1275,14 @@
     head.appendChild(right);
     panel.appendChild(head);
     if (minimized) return;
+    const upd = await ask({ type: 'af-check-update' });
+    if (upd && upd.available) {
+      const b = el('div', 'margin:6px 0;padding:5px 7px;border-radius:6px;font-size:12px;background:#e8f0fe', `È disponibile la versione ${upd.latest}. `);
+      const go = el('a', 'color:#0a66c2;cursor:pointer;text-decoration:underline', 'Vedi come aggiornare');
+      go.addEventListener('click', () => { ui.open['Aggiornamenti'] = true; saveUi(); again(); });
+      b.appendChild(go);
+      panel.appendChild(b);
+    }
 
     panel.appendChild(el('div', 'color:#666;margin:2px 0 6px', `${company} · ${site}`));
 
@@ -1364,6 +1414,9 @@
     section(panel, 'I tuoi dati');
     panel.appendChild(button('Esporta', exportData, 'Scarica diario, verifiche e stipendi visti'));
     panel.appendChild(button('Importa', () => importData(again), 'Carica un file esportato e uniscilo ai dati attuali'));
+
+    section(panel, 'Aggiornamenti', upd && upd.available ? 'nuova versione ' + upd.latest : 'v' + chrome.runtime.getManifest().version);
+    updateBlock(panel, upd, again);
 
     const foot = el('div', 'margin-top:6px;font-size:11px;color:#888',
       'Indice di rischio, non un verdetto. I dati restano nel tuo browser.');
