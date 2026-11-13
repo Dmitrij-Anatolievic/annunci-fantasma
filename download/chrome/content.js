@@ -1,0 +1,1715 @@
+// Annunci Fantasma — v2.3.1
+// Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
+// su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
+// Legge solo la pagina che stai guardando. Non invia dati a nessun server:
+// diario, verifiche e stipendi visti restano nel tuo browser (storage.local).
+
+(() => {
+  'use strict';
+
+  // Già caricato (es. clic sull'icona dove lo script è già attivo): background.js ha già chiamato __AF_FORCE
+  if (window.__AF_LOADED) return;
+  window.__AF_LOADED = true;
+
+  const PANEL_ID = 'af-panel';
+  let lastKey = '';
+  let minimized = false;
+  let retryKey = '';
+  let retries = 0;
+  let failKey = '';
+  let fails = 0;
+  let tickN = 0;
+  let ui = { minimized: false, open: { 'L\'azienda': true } };
+
+  window.__AF_FORCE = () => { window.__AF_MANUAL = true; lastKey = ''; fails = 0; tick(); };
+
+  // Lo stato "ridotto/espanso" del riquadro viene ricordato
+  try {
+    chrome.storage.local.get('afui', d => {
+      if (d && d.afui) { minimized = !!d.afui.minimized; if (d.afui.open) ui.open = d.afui.open; }
+    });
+  } catch (e) { /* ignora */ }
+  const saveUi = () => { try { chrome.storage.local.set({ afui: { minimized, open: ui.open } }); } catch (e) { /* ignora */ } };
+
+  // ======================================================================
+  // Utilità comuni
+  // ======================================================================
+
+  const DAY = 86400000;
+
+  // "6 giorni fa", "1 mese fa", "Ripubblicata 17 ore fa", "Posted 3 weeks ago", "un mese fa"
+  const AGE_RE = /(Ripubblicat[ao]\s+|Pubblicat[ao]\s+|Reposted\s+|Posted\s+|Attivo\s+|Active\s+)?(\d+|un[ao]?|an?)\s+(minut[oi]|minutes?|or[ae]|hours?|giorn[oi]|days?|settiman[ae]|weeks?|mes[ei]|months?|ann[oi]|years?)\s+(fa|ago)\b/i;
+
+  // Date dei dati strutturati: ISO, compatte (20261113T121507) e all'italiana (05/11/2026 = 5 novembre)
+  function parseDate(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') return v > 1e11 ? v : v * 1000;
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?)?/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+    if (m) return Date.UTC(+m[3], +m[2] - 1, +m[1]);
+    const t = Date.parse(s);
+    return isNaN(t) ? null : t;
+  }
+
+  function unitDays(u) {
+    u = u.toLowerCase();
+    if (/^minut/.test(u)) return 1 / 1440;
+    if (/^(ora|ore|hour)/.test(u)) return 1 / 24;
+    if (/^(giorn|day)/.test(u)) return 1;
+    if (/^(settiman|week)/.test(u)) return 7;
+    if (/^(mes|month)/.test(u)) return 30;
+    if (/^(ann|year)/.test(u)) return 365;
+    return null;
+  }
+
+  function lines(text) {
+    return (text || '').split('\n').map(s => s.trim()).filter(Boolean);
+  }
+
+  // Dati strutturati schema.org/JobPosting (li usano molti portali e quasi tutti i siti carriere aziendali)
+  let ldCache = { href: '', n: -1, v: null };
+  function readJobPostingLD() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    if (ldCache.href === location.href && ldCache.n === scripts.length) return ldCache.v;
+    const found = [];
+    const visit = o => {
+      if (!o || typeof o !== 'object') return;
+      if (Array.isArray(o)) { o.forEach(visit); return; }
+      const t = o['@type'];
+      if (t === 'JobPosting' || (Array.isArray(t) && t.includes('JobPosting'))) found.push(o);
+      if (o['@graph']) visit(o['@graph']);
+    };
+    for (const s of scripts) {
+      try { visit(JSON.parse(s.textContent)); } catch (e) { /* JSON non valido: ignora */ }
+    }
+    ldCache = { href: location.href, n: scripts.length, v: found[0] || null };
+    return ldCache.v;
+  }
+
+  // Primo nodo di testo che coincide esattamente con un testo dato (più veloce che scorrere tutti gli elementi)
+  function findTextNodes(text, max = 10) {
+    const out = [];
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = w.nextNode()) && out.length < max) {
+      if (n.nodeValue.trim() === text) out.push(n.parentElement);
+    }
+    return out;
+  }
+
+  function findShortText(re) {
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = w.nextNode())) {
+      const t = n.nodeValue.trim();
+      if (t.length < 60 && re.test(t)) return n.parentElement;
+    }
+    return null;
+  }
+
+  // Sale finché il contenitore non ha almeno minLen caratteri
+  function growTo(el, minLen, maxSteps = 8) {
+    for (let i = 0; el && i < maxSteps; i++, el = el.parentElement) {
+      if ((el.innerText || '').length >= minLen) return el;
+    }
+    return null;
+  }
+
+  // ======================================================================
+  // Adattatori per sito: ognuno sa trovare annuncio, azienda e titolo
+  // ======================================================================
+
+  const linkedin = {
+    name: 'LinkedIn',
+    auto: true,
+    test: () => location.hostname.endsWith('linkedin.com') && location.pathname.startsWith('/jobs'),
+    key() {
+      const u = new URL(location.href);
+      return u.searchParams.get('currentJobId') || (location.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || '';
+    },
+    read() {
+      // La scheda del browser è "Titolo | Azienda | LinkedIn" e si aggiorna con l'annuncio aperto
+      const parts = document.title.split(' | ');
+      if (parts.length < 3 || parts[parts.length - 1].trim() !== 'LinkedIn') return null;
+      const title = parts[0].trim();
+      const company = parts[parts.length - 2].trim();
+
+      // Intestazione dell'annuncio: il contenitore più piccolo che ha titolo, data e pulsante Salva
+      let card = null;
+      let cardLen = Infinity;
+      for (const t of findTextNodes(title, 12)) {
+        let e = t;
+        for (let i = 0; e && i < 12; i++, e = e.parentElement) {
+          const tx = e.innerText || '';
+          if (tx.length > 3000) break;
+          if (AGE_RE.test(tx) && /\b(Salva|Salvato|Save|Saved)\b/.test(tx)) {
+            if (tx.length < cardLen) { card = e; cardLen = tx.length; }
+            break;
+          }
+        }
+      }
+      if (!card) return null;
+
+      let header = card.innerText || '';
+      const cut = header.search(/Usa l.IA per valutare|Il tuo livello di corrispondenza|Mostra dettagli corrispondenza|Your job match|Premium/i);
+      if (cut > 0) header = header.slice(0, cut);
+
+      // Descrizione: sezione "Informazioni sull'offerta di lavoro"
+      const aboutEl = findShortText(/^(Informazioni sull.offerta di lavoro|About the job)$/i);
+      const bodyEl = aboutEl ? growTo(aboutEl, 300) : null;
+      const body = bodyEl ? (bodyEl.innerText || '').slice(0, 20000) : '';
+
+      // Sezione "Informazioni sull'azienda": dipendenti, settore, follower
+      const compEl = findShortText(/^(Informazioni sull.azienda|About the company)$/i);
+      const compBox = compEl ? growTo(compEl, 150) : null;
+      const companyInfo = compBox ? parseLinkedInCompany(compBox.innerText || '') : null;
+
+      return { company, title, header, body, companyInfo };
+    }
+  };
+
+  // Indeed nasconde la data nella pagina dei risultati, ma la tiene nei dati della pagina (pubDate)
+  const indeedDateCache = new Map();
+  function indeedPubDays(jk) {
+    if (!jk) return null;
+    if (!indeedDateCache.has(jk)) {
+      let ts = null;
+      const needle = '"jobkey":"' + jk + '"';
+      for (const sc of document.scripts) {
+        const t = sc.textContent;
+        const i = t.indexOf(needle);
+        if (i < 0) continue;
+        const ctx = t.slice(Math.max(0, i - 2000), i + 3000);
+        const m = ctx.match(/"pubDate":(\d{12,14})/) || ctx.match(/"createDate":(\d{12,14})/);
+        if (m) { ts = Number(m[1]); break; }
+      }
+      if (ts) indeedDateCache.set(jk, ts);
+      else return null;
+    }
+    return (Date.now() - indeedDateCache.get(jk)) / DAY;
+  }
+
+  function parseLinkedInCompany(text) {
+    const l = lines(text);
+    const info = { raw: text.slice(0, 1500) };
+    const emp = text.match(/([\d.]+\s*-\s*[\d.]+|[\d.]+\+?)\s+(dipendenti|employees)/i);
+    if (emp) info.employees = emp[1].replace(/\s+/g, '');
+    const onLi = text.match(/([\d.]+)\s+(su LinkedIn|on LinkedIn)/i);
+    if (onLi) info.onLinkedIn = onLi[1];
+    const fol = text.match(/([\d.]+)\s+follower/i);
+    if (fol) info.followers = fol[1];
+    const dotIdx = l.indexOf('•');
+    if (dotIdx > 0 && !/follower|segui|follow/i.test(l[dotIdx - 1])) info.sector = l[dotIdx - 1];
+    return info;
+  }
+
+  const indeed = {
+    name: 'Indeed',
+    auto: true,
+    test: () => /(^|\.)indeed\.com$/.test(location.hostname),
+    key() {
+      const u = new URL(location.href);
+      return u.searchParams.get('vjk') || u.searchParams.get('jk') || '';
+    },
+    read() {
+      const root = document.querySelector('#jobsearch-ViewjobPaneWrapper') ||
+        document.querySelector('.jobsearch-RightPane') ||
+        document.querySelector('#viewJobSSRRoot') ||
+        document.body;
+      const full = root.innerText || '';
+      const L = lines(full);
+
+      // Azienda: link alla pagina aziendale di Indeed (/cmp/), altrimenti la riga dopo il titolo
+      const cmpEl = root.querySelector('[data-testid="inlineHeader-companyName"] a, [data-testid="inlineHeader-companyName"], a[href*="/cmp/"]');
+      let company = cmpEl ? lines(cmpEl.textContent)[0] || '' : '';
+      company = company.replace(/\s*(\(.*?\)|[↗↗]).*$/, '').trim();
+
+      let ci = company ? L.indexOf(company) : -1;
+      if (ci < 0 && company) ci = L.findIndex(x => x.startsWith(company));
+      let title = '';
+      if (ci > 0) title = L[ci - 1];
+      if (!title) {
+        const hl = L.filter(x => !/^(Torna ai risultati|Job Post Details|Dettagli annuncio)/i.test(x) && x !== '-');
+        title = hl[0] || '';
+        if (!company) company = hl[1] || '';
+      }
+      if (!title) return null;
+
+      const DESC_RE = /Descrizione completa della posizione|Full job description/i;
+      const t0 = full.indexOf(title);
+      let idx = full.search(DESC_RE);
+      if (idx < 0) {
+        const a = full.search(/Candidati ora|Apply now|Candidati facilmente|Candidatura semplice/i);
+        idx = a > 0 ? a + 400 : -1;
+      }
+      if (idx < 0) return null; // dettaglio non ancora caricato
+      const header = full.slice(Math.max(0, t0), idx);
+      const body = full.slice(idx, idx + 20000);
+
+      const companyInfo = {};
+      const rating = header.match(/([\d][,.]\d)\s*(su 5|out of 5)/i);
+      if (rating) companyInfo.rating = rating[1].replace(',', '.') + '/5 su Indeed';
+      const cmpLink = root.querySelector('a[href*="/cmp/"]');
+      if (cmpLink) companyInfo.reviewsUrl = cmpLink.href.split('?')[0].replace(/\/$/, '') + '/reviews';
+      return { company, title, header, body, companyInfo, pubDays: indeedPubDays(this.key()) };
+    }
+  };
+
+  // Portali di lavoro e piattaforme di selezione: analisi automatica sulle pagine di un singolo annuncio
+  const PORTALS = [
+    // portali (l'azienda va letta dall'annuncio)
+    { re: /(^|\.)glassdoor\.[a-z.]+$/, name: 'Glassdoor', kind: 'portale' },
+    { re: /(^|\.)subito\.it$/, name: 'Subito', kind: 'portale', detail: /^\/offerte-lavoro\/.+-\d+\.htm$/,
+      company: ['[class*="_company_name"] h6', '[class*="_shop-link"] [class*="_user-name"]'],
+      privateSel: '[class*="_private-user-column"] [class*="_name"]',
+      titleCompany: /^Subito - (.+?) - /,
+      bodySel: '[class*="_description"]:not([class*="description-title"])',
+      headerRange: [/\nOFFERTE DI LAVORO\n/, /\nDescrizione\n/],
+      extra: () => { const f = [...document.querySelectorAll('ul,section,div')].find(e => /^Livello\b/.test(e.innerText || '') && e.innerText.length < 800); return f ? f.innerText : ''; } },
+    { re: /(^|\.)bakeca\.it$/, name: 'Bakeca', kind: 'portale' },
+    { re: /(^|\.)jooble\.org$/, name: 'Jooble', kind: 'portale', detail: /^\/desc\// },
+    { re: /(^|\.)careerjet\.it$/, name: 'Careerjet', kind: 'portale' },
+    { re: /(^|\.)jobrapido\.com$/, name: 'Jobrapido', kind: 'portale' },
+    { re: /(^|\.)talent\.com$/, name: 'Talent.com', kind: 'portale' },
+    { re: /(^|\.)welcometothejungle\.com$/, name: 'Welcome to the Jungle', kind: 'portale' },
+    { re: /(^|\.)randstad\.it$/, name: 'Randstad', kind: 'agenzia' },
+    { re: /(^|\.)adecco\.it$/, name: 'Adecco', kind: 'agenzia' },
+    { re: /(^|\.)adecco\.com$/, name: 'Adecco', kind: 'agenzia', detail: /^\/it-it\/cerca-lavoro\/.+\/[\d-]+\/?$/ },
+    { re: /(^|\.)manpower\.it$/, name: 'Manpower', kind: 'agenzia' },
+    { re: /(^|\.)gigroup\.it$/, name: 'Gi Group', kind: 'agenzia' },
+    { re: /(^|\.)umana\.it$/, name: 'Umana', kind: 'agenzia' },
+    { re: /(^|\.)openjobmetis\.it$/, name: 'Openjobmetis', kind: 'agenzia' },
+    // piattaforme carriere usate dalle aziende (l'azienda è chi pubblica)
+    { re: /(^|\.)greenhouse\.io$/, name: 'Greenhouse', kind: 'ats' },
+    { re: /(^|\.)lever\.co$/, name: 'Lever', kind: 'ats' },
+    { re: /(^|\.)myworkdayjobs\.com$/, name: 'Workday', kind: 'ats' },
+    { re: /(^|\.)smartrecruiters\.com$/, name: 'SmartRecruiters', kind: 'ats' },
+    { re: /(^|\.)teamtailor\.com$/, name: 'Teamtailor', kind: 'ats' },
+    { re: /(^|\.)recruitee\.com$/, name: 'Recruitee', kind: 'ats' },
+    { re: /(^|\.)intervieweb\.it$/, name: 'InRecruiting', kind: 'ats' },
+    { re: /(^|\.)personio\.(de|com|it)$/, name: 'Personio', kind: 'ats' },
+    { re: /(^|\.)in-recruiting\.com$/, name: 'InRecruiting', kind: 'ats' },
+    { re: /(^|\.)workable\.com$/, name: 'Workable', kind: 'ats' },
+    { re: /(^|\.)successfactors\.(com|eu)$/, name: 'SAP SuccessFactors', kind: 'ats' },
+    { re: /(^|\.)taleo\.net$/, name: 'Oracle Taleo', kind: 'ats' },
+    { re: /(^|\.)icims\.com$/, name: 'iCIMS', kind: 'ats' },
+    { re: /(^|\.)bamboohr\.com$/, name: 'BambooHR', kind: 'ats' }
+  ];
+
+  function portalFor(host) { return PORTALS.find(p => p.re.test(host)) || null; }
+
+  // Pagina di un singolo annuncio? (evita di analizzare le liste di risultati e le home page)
+  function looksLikeJobPage(text, portal) {
+    if (readJobPostingLD()) return true;
+    if (portal && portal.detail) return portal.detail.test(location.pathname) && text.length > 300;
+    if (portal) return false; // portale senza schema riconosciuto: solo con il clic sull'icona
+    const path = location.pathname + location.search;
+    if (!/(job|jobs|lavoro|offert|annunc|vacanc|posizion|career|carriere|position|opening)/i.test(path)) return false;
+    if (text.length < 700) return false;
+    if (!/(requisiti|responsabilit|mansioni|cosa offriamo|offriamo|qualifications|requirements|responsibilities|we offer|candidati|apply)/i.test(text)) return false;
+    const ages = text.match(new RegExp(AGE_RE.source, 'gi')) || [];
+    return ages.length <= 4; // tante date diverse = lista di annunci
+  }
+
+  // Toglie il piè di pagina legale (P.IVA, capitale sociale, registro imprese...) che non fa parte dell'annuncio
+  function stripFooter(text) {
+    const i = text.search(/Iscr(\.|izione)\s+(al\s+)?Registro Imprese|Cap(\.|itale)\s+Soc(\.|iale)|Codice Fiscale\s+(n\.|e)|N\.\s*REA|Sede legale|©\s*\d{4}|Copyright\s+\d{4}/i);
+    return i > 300 ? text.slice(0, i) : text;
+  }
+
+  function htmlToText(html) {
+    // DOMParser non esegue script né carica immagini: sicuro anche con HTML della pagina
+    const doc = new DOMParser().parseFromString(String(html).replace(/<(br|\/p|\/li|\/div|\/h\d)\s*\/?>/gi, '$&\n'), 'text/html');
+    return (doc.body && doc.body.textContent) || '';
+  }
+
+  function genericRead(portal) {
+    // Controlli a costo zero prima di leggere il testo della pagina (che è l'operazione lenta)
+    if (!window.__AF_MANUAL && !readJobPostingLD()) {
+      if (portal && (!portal.detail || !portal.detail.test(location.pathname))) return null;
+      if (!portal && !/(job|jobs|lavoro|offert|annunc|vacanc|posizion|career|carriere|position|opening)/i.test(location.pathname + location.search)) return null;
+    }
+    const root = document.querySelector('main') || document.querySelector('article') || document.body;
+    const text = stripFooter(root.innerText || '');
+    if (!window.__AF_MANUAL && !looksLikeJobPage(text, portal)) return null;
+    const ld = readJobPostingLD();
+    const ga = document.title.match(/^(?:Job Application for|Candidatura per)\s+(.+?)\s+(?:at|presso)\s+(.+)$/i);
+    const og = (document.querySelector('meta[property="og:site_name"]') || {}).content;
+    const sel = portal && portal.company ? [].concat(portal.company).map(q => document.querySelector(q)).find(Boolean) : null;
+    const tc = portal && portal.titleCompany ? document.title.match(portal.titleCompany) : null;
+    let company = (ld && ld.hiringOrganization && (ld.hiringOrganization.name || ld.hiringOrganization)) || (ga && ga[2]) ||
+      (sel ? (sel.textContent || '').trim() : '') || (tc ? tc[1] : '');
+    if (!company && portal && portal.kind === 'ats') {
+      company = og || location.hostname.split('.')[0];
+    }
+    if (!company && !portal) company = og || location.hostname.replace(/^www\./, '');
+    let privateUser = false;
+    if (!company && portal && portal.privateSel) {
+      const pv = document.querySelector(portal.privateSel);
+      if (pv && pv.textContent.trim()) { company = pv.textContent.trim() + ' (privato)'; privateUser = true; }
+    }
+    if (!company) company = 'Azienda non indicata';
+    const title = (ld && ld.title) || (ga && ga[1]) || (document.querySelector('h1') || {}).textContent || document.title.split(/ [|\-–] /)[0];
+    // Il testo dell'annuncio: la descrizione dei dati strutturati è la fonte più pulita
+    const ldText = ld && ld.description ? htmlToText(ld.description) : '';
+    // Portali con struttura nota: solo intestazione e descrizione dell'annuncio, senza menu e "ricerche simili"
+    const bodyEl = portal && portal.bodySel ? document.querySelector(portal.bodySel) : null;
+    const extra = portal && portal.extra ? portal.extra() : '';
+    let header = '';
+    if (portal && portal.headerRange) {
+      const full = '\n' + (root.innerText || '');
+      const a = full.search(portal.headerRange[0]);
+      const b = a >= 0 ? full.slice(a + 1).search(portal.headerRange[1]) : -1;
+      if (a >= 0 && b > 0) header = full.slice(a, a + 1 + b).trim();
+    }
+    if (extra) header += '\n' + extra;
+    const own = bodyEl ? (bodyEl.innerText || '') + (extra ? '\n' + extra : '') : '';
+    const body = (ldText.length > 200 ? ldText + '\n' + text.slice(0, 3000) : own.length > 50 ? own : text).slice(0, 30000);
+    return {
+      company: String(company).trim(),
+      title: String(title).trim(),
+      header,
+      body,
+      kwText: ldText.length > 200 ? ldText : own.length > 50 ? own : text,
+      companyInfo: portal && portal.kind === 'agenzia' ? { agencySite: portal.name } : privateUser ? { privateUser: true } : null
+    };
+  }
+
+  const portals = {
+    name: 'Portale',
+    auto: true,
+    test: () => !!portalFor(location.hostname),
+    key: () => location.origin + location.pathname,
+    read: () => genericRead(portalFor(location.hostname))
+  };
+
+  // Qualsiasi altro sito: solo su richiesta (clic sull'icona)
+  const generic = {
+    name: 'Pagina web',
+    auto: false,
+    test: () => true,
+    key: () => location.origin + location.pathname,
+    read: () => genericRead(null)
+  };
+
+  const ADAPTERS = [linkedin, indeed, portals, generic];
+
+  function pickAdapter() {
+    const a = ADAPTERS.find(x => x.test());
+    if (!a) return null;
+    if (!a.auto && !window.__AF_MANUAL) return null;
+    return a;
+  }
+
+  function siteName(adapter) {
+    if (adapter === portals) return (portalFor(location.hostname) || {}).name || 'Portale';
+    if (adapter === generic) return location.hostname.replace(/^www\./, '');
+    return adapter.name;
+  }
+
+  // ======================================================================
+  // Analisi: segnali di "annuncio fantasma" e di condizioni poco serie
+  // ======================================================================
+
+  // Partita IVA come forma di contratto: "contratto con partita IVA", "richiesta P.IVA", "partita IVA obbligatoria",
+  // "in possesso di partita IVA", "regime forfettario"... Non il numero di P.IVA dell'azienda nel piè di pagina.
+  const PIVA = '(partita\\s*iva|p\\.\\s?iva)';
+  const PIVA_RE = new RegExp(
+    '(contratto|collaborazione|rapporto|lavorare|inquadramento)\\s+(con|a|in|tramite)\\s+(la\\s+|una\\s+)?' + PIVA +
+    '|(richiest[ao]|richiede|richiediamo|serve|occorre|necessari[ao]|obbligatori[ao]|indispensabile|requisito)\\s*:?\\s+(la\\s+|una\\s+)?' + PIVA +
+    '|' + PIVA + '\\s+(richiesta|necessaria|obbligatoria|indispensabile|propria|attiva)' +
+    '|(possesso|titolare|apertura|aprire|munit[oi])\\s+(di\\s+)?(la\\s+|una\\s+)?' + PIVA +
+    '|regime\\s+forfettario|libero\\s+professionista\\s+con\\s+' + PIVA, 'i');
+
+  // Lavoro autonomo detto senza nominare la partita IVA
+  const AUTONOMO_RE = /liber[oi]\s+professionist[ai]|libera\s+professione|(contratto|rapporto|regime|forma|collaborazione)\s+(di\s+)?lavoro\s+autonomo|lavorator[ei]\s+autonom[oi]/i;
+
+  // Vero se c'è almeno una occorrenza non negata ("non si valutano liberi professionisti", "no partita IVA")
+  const NEG_RE = /(\bnon\b|\bno\b|\bnessun[ao]?\b|esclus[ao]|senza|niente)[^.;:\n]{0,40}$/i;
+  function affirmed(re, text) {
+    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    let m;
+    while ((m = g.exec(text))) {
+      if (!NEG_RE.test(text.slice(Math.max(0, m.index - 45), m.index))) return true;
+      if (m[0].length === 0) g.lastIndex++;
+    }
+    return false;
+  }
+
+  // Formule che sostituiscono la cifra
+  const VAGUE_PAY_RE = /(retribuzione|compenso|stipendio|ral|inquadramento)[^.\n]{0,40}(commisurat[aoi] all[ae']\s?(esperienz[ae]|competenz[ae]|seniority|capacit[aà])|da (definire|concordare|discutere|valutare)|in (base|linea) (all[ae']|con)\s?[^.\n]{0,25}(esperienz[ae]|profilo|seniority))/i;
+  // Truffe del lavoro online: guadagni facili, lavoretti "a compito"
+  const EASY_RE = /guadagn\w+ (facil\w+|extra|subito|da casa|sicur\w+|immediat\w+)|soldi facili|(fino a|oltre)\s+€?\s?\d[\d.]*\s?(€|euro)?\s+al (giorno|dì)|mett\w+ (mi piace|like)|(scrivere|lasciare) recensioni[^.\n]{0,30}(pagat|retribuit|compens)|pagat[oi] (per|a) (ogni )?(compito|task|clic|click)|basta (uno|il tuo|un) (smartphone|cellulare|telefono)/i;
+  const DOCS_RE = /(invi\w+|mand\w+|alleg\w+|forni\w+|trasmett\w+)[^.\n]{0,60}(documento d.identit[aà]|carta d.identit[aà]|codice fiscale|\biban\b|coordinate bancarie|tessera sanitaria|estremi (del conto|bancari))/i;
+  const CHAT_RE = /(contatt\w+|scriv\w+|candidat\w+|invi\w+|mand\w+|rispond\w+|messaggi\w*)[^.\n]{0,60}(whatsapp|telegram)|wa\.me\/|\bt\.me\/|(whatsapp|telegram)\s*(al|:)?\s*(\+?\d[\d\s]{7,})/i;
+  const FREE_MAIL_RE = /[\w.+-]+@(gmail|hotmail|libero|yahoo|outlook|virgilio|live|icloud|tiscali|alice)\.[a-z.]{2,6}/i;
+  const UNPAID_RE = /(giornat\w+ di prova|periodo di prova|settiman\w+ di prova|\bprova)[^.\n]{0,30}(non retribuit\w+|gratuit\w+|senza (compenso|retribuzione))|(formazione|affiancamento|stage|tirocinio)[^.\n]{0,30}non retribuit\w+|solo rimborso spese|a titolo gratuito|non (è )?(previst[ao]|prevede) (alcun[ao]? )?(retribuzione|compenso)/i;
+  const EVERGREEN_RE = /siamo sempre alla ricerca|sempre alla ricerca di (nuov|talent|figur|person|profil)|(per|in vista di) (eventuali )?futur[ei] (opportunit|selezion|necessit|esigenz|apertur|inseriment)|eventuali future|talent pool|bacino di candidat|banca dati (di )?(cv|curricul|candidat)|non (abbiamo|ci sono) posizioni aperte/i;
+
+  function salaryRange(ld, text) {
+    const v = ld && ld.baseSalary && (ld.baseSalary.value || ld.baseSalary);
+    if (v && v.minValue && v.maxValue) return { min: +v.minValue, max: +v.maxValue };
+    if (ld && ld.baseSalary) text = JSON.stringify(ld.baseSalary) + '\n' + text; // es. Manpower: "€ 500 - € 25000 Annuale" dentro il valore
+    const m = text.match(/(?:€|EUR)\s?([\d.]{3,9})(?:,\d+)?\s*[-–]\s*(?:€|EUR)?\s?([\d.]{3,9})|([\d.]{3,9})\s*(?:€|EUR|euro)?\s*[-–]\s*([\d.]{3,9})\s*(?:€|EUR|euro)/i);
+    if (!m) return null;
+    const a = parseInt((m[1] || m[3]).replace(/\./g, ''), 10), b = parseInt((m[2] || m[4]).replace(/\./g, ''), 10);
+    return a && b && b > a ? { min: a, max: b } : null;
+  }
+
+  const SALARY_RE = /(€|EUR|USD|\$)\s?\d|\d[\d.,]*\s?[Kk]?\s?(€|EUR|USD|euro\b)|\/\s?(yr|hr)\b|\d[\d.,]*\s*(lordi|netti)?\s*(all.anno|all.ora|al mese|mensili)|\bRAL\b\s*:?\s*\d/i;
+
+  function salaryText(info, ld) {
+    if (ld && ld.baseSalary) {
+      const v = ld.baseSalary.value || {};
+      const cur = ld.baseSalary.currency || '';
+      const unit = ({ HOUR: 'all\'ora', DAY: 'al giorno', WEEK: 'a settimana', MONTH: 'al mese', YEAR: 'all\'anno' })[String(v.unitText || '').toUpperCase()] || v.unitText || '';
+      const eur = cur === 'EUR' ? '€' : cur;
+      if (v.minValue && v.maxValue && v.minValue !== v.maxValue) return `${v.minValue}–${v.maxValue} ${eur} ${unit}`.trim();
+      if (v.minValue || v.maxValue || v.value) return `${v.value || v.minValue || v.maxValue} ${eur} ${unit}`.trim();
+    }
+    const src = (info.header || info.body.slice(0, 4000)).replace(/[^\n]*Premium[^\n]*/gi, '');
+    const m = src.match(/[^\n·|]*(\d[\d.,]*\s?[Kk]?\s?(€|EUR)|(€|EUR)\s?\d)[^\n·|]*/);
+    return m ? m[0].trim().slice(0, 80) : '';
+  }
+
+  // "Oggi alle 17:26", "Ieri alle 9:00", "3 nov alle 10:00" (Subito e simili)
+  const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+  function italianDateDays(text) {
+    if (/\bOggi alle\b/i.test(text)) return 0;
+    if (/\bIeri alle\b/i.test(text)) return 1;
+    const m = text.match(/\b(\d{1,2})\s+(gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic)[a-z]*\.?(\s+(\d{4}))?\s+alle\b/i);
+    if (!m) return null;
+    const now = new Date();
+    let d = new Date(m[4] ? parseInt(m[4], 10) : now.getFullYear(), MESI.indexOf(m[2].toLowerCase()), parseInt(m[1], 10));
+    if (d > now) d = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
+    return (now - d) / DAY;
+  }
+
+  function analyze(info, ld) {
+    const header = (info.header || '').replace(/[^\n]*Premium[^\n]*/gi, '');
+    const body = info.body || '';
+    const reasons = []; // [colore, testo]
+    let score = 0;
+    const add = (pts, color, text) => { score += pts; reasons.push([color, text]); };
+
+    // --- Età dell'annuncio: dai dati strutturati o dal testo dell'intestazione ---
+    let days = null;
+    let reposted = false;
+    const posted = ld ? parseDate(ld.datePosted) : null;
+    if (info.pubDays !== undefined && info.pubDays !== null) days = info.pubDays; // data interna del sito (Indeed)
+    else if (posted !== null && posted <= Date.now() + DAY) days = Math.max(0, (Date.now() - posted) / DAY);
+    const ageSrc = header || body.slice(0, 1500);
+    const m = ageSrc.match(AGE_RE);
+    if (m) {
+      reposted = /^(Ripubblicat|Reposted)/i.test(m[1] || '');
+      const n = /^\d+$/.test(m[2]) ? parseInt(m[2], 10) : 1;
+      const u = unitDays(m[3]);
+      if (u !== null && days === null) days = n * u;
+    }
+    if (days === null) days = italianDateDays(ageSrc);
+    const plus = ageSrc.match(/(\d+)\+\s*(giorni|days)/i);
+    if (days === null && plus) days = parseInt(plus[1], 10) + 1;
+    if (days === null && /più di 30 giorni/i.test(ageSrc)) days = 31;
+
+    if (days === null) add(0, 'grigio', 'Data di pubblicazione non indicata');
+    else if (days >= 90) add(3, 'rosso', `Online da circa ${days >= 365 ? (days / 365).toFixed(1).replace('.', ',') + ' anni' : Math.round(days / 30) + ' mesi'}: quasi certamente un annuncio "fantasma" o sempre aperto`);
+    else if (days >= 30) add(2, 'rosso', `Online da circa ${Math.round(days)} giorni`);
+    else if (days >= 14) add(1, 'giallo', `Online da circa ${Math.round(days)} giorni`);
+    else add(0, 'verde', days < 1 ? 'Pubblicato da meno di un giorno' : (Math.round(days) === 1 ? 'Pubblicato da circa 1 giorno' : `Pubblicato da circa ${Math.round(days)} giorni`));
+
+    if (reposted) {
+      if (days !== null && days < 14) add(1, 'giallo', 'Annuncio ripubblicato di recente');
+      else add(2, 'rosso', 'Annuncio ripubblicato');
+    }
+
+    const until = ld ? parseDate(ld.validThrough) : null;
+    if (until !== null && until < Date.now()) {
+      if (posted !== null && until < posted) add(1, 'giallo', 'Date dell\'annuncio incoerenti: la scadenza è precedente alla pubblicazione (spesso succede quando un annuncio vecchio viene ripubblicato)');
+      else add(2, 'rosso', 'Scaduto secondo i dati dell\'annuncio, ma ancora online');
+    }
+    if (/Non accetta più candidature|No longer accepting applications|annuncio scaduto|offerta scaduta/i.test(header + body.slice(0, 2000))) {
+      add(3, 'rosso', 'Non accetta più candidature');
+    }
+
+    // --- Molti candidati ma ancora aperto ---
+    const app = header.match(/Più di\s+(\d+)\s+(candidati|persone)|Over\s+(\d+)\s+(applicants|people)/i);
+    if (app) {
+      const n = parseInt(app[1] || app[3], 10);
+      if (n >= 100 && days !== null && days >= 14) add(1, 'giallo', `Più di ${n} candidati e ancora aperto`);
+    }
+
+    // --- Retribuzione ---
+    const asksMoney = /(corso|kit|materiale|formazione)\s+a pagamento|quota (di )?iscrizione|investimento iniziale/i.test(body);
+    const salary = !asksMoney && ((ld && ld.baseSalary) || SALARY_RE.test(header || body.slice(0, 4000)));
+    const vague = body.match(VAGUE_PAY_RE);
+    if (salary) add(0, 'verde', 'Retribuzione indicata');
+    else add(1, 'giallo', 'Retribuzione non indicata' + (vague ? `, solo una formula vaga («${vague[0]}»)` : '') +
+      ': dal 7 giugno 2026 gli annunci devono riportare stipendio o fascia (D.Lgs. 96/2026)');
+    if (/\bC\.?C\.?N\.?L\b|contratto collettivo/i.test(header + '\n' + body)) add(0, 'verde', 'Contratto collettivo (CCNL) indicato');
+
+    // --- Segnali specifici dei siti ---
+    if (/Risposte gestite esternamente|Responses managed off LinkedIn/i.test(header)) add(1, 'giallo', 'Candidatura gestita fuori dal sito');
+    if (/Nessuna informazione sulla risposta|No response insights/i.test(header)) add(0, 'grigio', 'Il sito non ha dati su quanto l\'azienda risponde');
+    if (/Valutazione attiva delle candidature|Actively reviewing applicants/i.test(header + body.slice(0, 1500))) add(-1, 'verde', 'L\'azienda sta valutando attivamente le candidature');
+    if (/Spesso risponde entro|Often responds within|risponde in genere entro/i.test(header + body.slice(0, 3000))) add(-1, 'verde', 'L\'azienda risponde spesso ai candidati');
+    if (/Promoss[ao]|Promoted/i.test(header)) add(0, 'grigio', 'Annuncio promosso (a pagamento): solo informativo');
+    if (/\bCollaborazione\b/.test(header) || /Tipo di contratto\s*\n?\s*(Contratto a progetto|Collaborazione|Co\.?co\.?co)/i.test(header)) add(1, 'giallo', 'Contratto di collaborazione o a progetto, non da dipendente');
+
+    // --- Chi pubblica: agenzia o società di selezione al posto dell'azienda finale ---
+    const ci = info.companyInfo || {};
+    const agency = ci.agencySite || /agenzia per il lavoro|\bapl\b|lavoro temporaneo|staffing|recruit(ing|ment)|selezione del personale|head ?hunt|executive search/i.test(info.company || '') ||
+      (ci.sector && /risorse umane|staffing|recruit|selezione|human resources/i.test(ci.sector)) ||
+      /per (importante|primaria|nota) (azienda|società) cliente|per (conto di|una) (azienda|società) cliente|nostr[oa] client[ei]|our client/i.test(body);
+    if (agency) add(1, 'giallo', 'Pubblicato da un\'agenzia o società di selezione: l\'azienda finale non è indicata');
+
+    // --- Condizioni poco serie, nel testo dell'annuncio ---
+    // employmentType "CONTRACTOR" non si usa: Randstad lo mette anche su contratti a tempo determinato
+    const empType = ld && ld.employmentType ? [].concat(ld.employmentType).join(' ').toUpperCase() : '';
+    const freelance = affirmed(AUTONOMO_RE, info.title || '') || affirmed(AUTONOMO_RE, body);
+    if (info.companyInfo && info.companyInfo.privateUser) add(1, 'giallo', 'Pubblicato da un privato, non da un\'azienda: prima del colloquio chiedi nome dell\'azienda e partita IVA del datore di lavoro');
+    if (affirmed(PIVA_RE, header + '\n' + body)) add(2, 'rosso', 'Partita IVA richiesta o tra le forme di contratto');
+    else if (freelance) add(2, 'rosso', 'Lavoro autonomo (libera professione): di solito serve la partita IVA, non è da dipendente');
+    if (affirmed(/\bprovvigion|guadagni\s+(illimitati|fino a)|solo a commissione/i, body)) add(2, 'rosso', 'Compenso a provvigione o "guadagni illimitati"');
+    if (asksMoney) add(3, 'rosso', 'Ti chiedono di pagare qualcosa');
+    if (affirmed(/prestazione occasionale|ritenuta d.acconto|collaborazione occasionale/i, body)) add(1, 'giallo', 'Prestazione occasionale o con ritenuta d\'acconto');
+    if ((/stage|tirocinio|internship/i.test(info.title || '') || /INTERN/.test(empType)) && !salary) add(1, 'giallo', 'Stage o tirocinio senza rimborso indicato');
+    if (body && body.replace(/\s+/g, ' ').length < 400) add(1, 'giallo', 'Descrizione molto scarna');
+
+    // --- Fascia di stipendio senza senso (es. 500 – 25.000 €) ---
+    const range = salaryRange(ld, header + '\n' + body.slice(0, 4000));
+    if (range && range.min > 0 && range.max / range.min >= 3) {
+      add(1, 'giallo', `Fascia di stipendio troppo larga (${range.min.toLocaleString('it-IT')} – ${range.max.toLocaleString('it-IT')} €): non dice quanto pagano davvero`);
+    }
+
+    // --- Junior o stage che chiede anni di esperienza ---
+    const tb = (info.title || '') + '\n' + header;
+    const yrs = body.match(/(almeno|minimo|non meno di|esperienza (di|pregressa di|almeno))\s+(\d+)\s+ann/i) || body.match(/(\d+)\+?\s+anni di esperienza/i);
+    const nYrs = yrs ? parseInt(yrs[3] || yrs[1], 10) : 0;
+    if (/\b(junior|stage|stagista|tirocini|neolaureat|entry.level|prima esperienza|apprendistat)/i.test(tb) && nYrs >= 2) {
+      add(1, 'giallo', `Si presenta come posizione d'ingresso ma chiede almeno ${nYrs} anni di esperienza: requisiti incoerenti`);
+    }
+
+    // --- "Urgente" ma online da settimane ---
+    if (/\burgent[ei]\b|inserimento immediato|subito disponibil/i.test(tb + body.slice(0, 1500)) && days !== null && days >= 30) {
+      add(1, 'giallo', `Dice "urgente" ma è online da circa ${Math.round(days)} giorni`);
+    }
+
+    // --- Segnali di truffa e di annuncio "vetrina" ---
+    let scam = asksMoney;
+    if (affirmed(EASY_RE, (info.title || '') + '\n' + body)) { scam = true; add(2, 'rosso', 'Promette guadagni facili o pagati "a compito": è lo schema tipico delle truffe del lavoro online'); }
+    if (affirmed(DOCS_RE, body)) { scam = true; add(2, 'rosso', 'Chiede documenti o dati bancari già nell\'annuncio: non inviarli mai prima di un contratto'); }
+    if (CHAT_RE.test(body)) add(1, 'giallo', 'Ti fa passare su WhatsApp o Telegram: succede con piccole attività, ma è anche il canale preferito dei finti selezionatori');
+    const mail = body.match(FREE_MAIL_RE);
+    if (mail && !ci.privateUser) add(1, 'giallo', `Candidatura a un indirizzo email personale (@${mail[1]}): un'azienda di solito usa il proprio dominio`);
+    if (affirmed(UNPAID_RE, body)) add(2, 'rosso', 'Prova o periodo di lavoro non pagato');
+    if (affirmed(EVERGREEN_RE, body)) add(2, 'rosso', 'Non sembra una posizione aperta adesso: raccolgono curriculum per il futuro');
+    if (!agency && !ci.privateUser && /^azienda (non indicata|riservata|confidenziale|anonima)$|^(riservat[ao]|confidenziale)$/i.test((info.company || '').trim())) {
+      add(1, 'giallo', 'Non risulta chi pubblica l\'annuncio. Gli annunci anonimi sono vietati (art. 9 D.Lgs. 276/2003): chiedi il nome dell\'azienda prima di mandare il CV');
+    }
+
+    score = Math.max(0, score);
+    return { score, reasons, salary: salary ? salaryText(info, ld) : '', days, scam };
+  }
+
+  // ======================================================================
+  // Archivio locale
+  // ======================================================================
+
+  const store = {
+    get: k => new Promise(res => chrome.storage.local.get(k, d => res(d ? d[k] : undefined))),
+    set: (k, v) => new Promise(res => chrome.storage.local.set({ [k]: v }, res))
+  };
+  const diaryKey = company => 'af:' + company.toLowerCase();
+  const siteKey = key => 'afjob:' + key;
+  const normTitle = t => (t || '').toLowerCase().replace(/\(.*?\)|\b(m\/f|f\/m|m\/w|h\/f)\b/g, '').replace(/[^a-zà-ù0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const salKey = title => 'afsal:' + normTitle(title);
+  const seenKey = key => 'afseen:' + key;
+
+  // Ricorda la prima volta che hai visto l'annuncio: se poi la data "rinasce", è stato rinfrescato
+  async function recordSeen(key) {
+    const k = seenKey(key);
+    const today = new Date().toISOString().slice(0, 10);
+    let v = await store.get(k);
+    if (!v) { v = { first: today }; await store.set(k, v); }
+    return v;
+  }
+
+  // Ricorda gli stipendi visti per lo stesso ruolo (solo nel tuo browser), per confrontarli nel tempo
+  async function recordSalary(title, company, site, salary, key) {
+    if (!salary || !normTitle(title)) return [];
+    const k = salKey(title);
+    const list = (await store.get(k)) || [];
+    if (!list.some(x => x.job === key)) {
+      list.push({ job: key, date: new Date().toISOString().slice(0, 10), company, site, salary });
+      while (list.length > 50) list.shift();
+      await store.set(k, list);
+    }
+    return list;
+  }
+
+  // --- Esporta / importa: diario, verifiche e stipendi in un file JSON ---
+
+  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('afrev:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:') || k.startsWith('afdup:');
+
+  function exportData() {
+    chrome.storage.local.get(null, all => {
+      const data = {};
+      for (const k of Object.keys(all || {})) if (isOurKey(k)) data[k] = all[k];
+      const payload = { app: 'annunci-fantasma', version: 1, exported: new Date().toISOString(), data };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `annunci-fantasma-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    });
+  }
+
+  // Unisce i dati importati a quelli esistenti senza perdere nulla
+  function mergeEntry(key, oldV, newV) {
+    if (!oldV) return newV;
+    if (key.startsWith('af:')) {
+      const applied = [...(oldV.applied || [])];
+      for (const a of newV.applied || []) if (!applied.some(x => x.job === a.job)) applied.push(a);
+      return { applied, replies: Math.max(oldV.replies || 0, newV.replies || 0) };
+    }
+    if (key.startsWith('afsal:')) {
+      const list = [...(oldV || [])];
+      for (const s of newV || []) if (!list.some(x => x.job === s.job)) list.push(s);
+      return list.slice(-50);
+    }
+    if (key.startsWith('afdup:')) return { first: (oldV.first || '9') <= (newV.first || '9') ? oldV.first : newV.first, keys: [...new Set([...(oldV.keys || []), ...(newV.keys || [])])].slice(-10) };
+    if (key.startsWith('afseen:')) return (oldV.first || '9') <= (newV.first || '9') ? oldV : newV; // la prima volta vista
+    return (newV.date || '') >= (oldV.date || '') ? newV : oldV; // verifica più recente
+  }
+
+  function importData(onDone) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        let payload;
+        try { payload = JSON.parse(reader.result); } catch (e) { note('File non valido: non è un JSON leggibile.'); return; }
+        if (!payload || payload.app !== 'annunci-fantasma' || typeof payload.data !== 'object') {
+          note('File non valido: non è un\'esportazione di Annunci Fantasma.');
+          return;
+        }
+        const keys = Object.keys(payload.data).filter(isOurKey);
+        chrome.storage.local.get(keys, current => {
+          const merged = {};
+          for (const k of keys) merged[k] = mergeEntry(k, (current || {})[k], payload.data[k]);
+          chrome.storage.local.set(merged, () => { note(`Importati ${keys.length} elementi.`); onDone(); });
+        });
+      };
+      reader.readAsText(file);
+    });
+    input.click();
+  }
+
+  // ======================================================================
+  // Ricerche con un clic (le apri tu, in una nuova scheda)
+  // ======================================================================
+
+  // Confronto tra dipendenti dichiarati (fascia della pagina aziendale) e persone che dicono di lavorarci
+  const num = t => parseInt(String(t).replace(/[.\s]/g, ''), 10);
+  function employeeGap(ci) {
+    if (!ci || !ci.employees || !ci.onLinkedIn) return null;
+    const low = num(ci.employees.split('-')[0].replace('+', ''));
+    const n = num(ci.onLinkedIn);
+    if (!low || isNaN(n) || low < 50) return null;
+    const pct = Math.round(n / low * 100);
+    if (pct >= 20) return null;
+    return {
+      points: low >= 200 && pct < 5 ? 1 : 0,
+      text: `Dichiara almeno ${low} dipendenti, ma solo ${n} persone su LinkedIn dicono di lavorarci (${pct}%). ` +
+        'Può essere normale per aziende con molti operai o personale in negozio; altrimenti l\'azienda potrebbe essere più piccola di come si presenta: controlla i dati ufficiali.'
+    };
+  }
+
+  const google = (q, news) => 'https://www.google.com/search?q=' + encodeURIComponent(q) + (news ? '&tbm=nws' : '');
+  const cleanTitle = t => (t || '').replace(/\(.*?\)/g, '').trim();
+  const SEARCHES = {
+    site: (c, t) => google(`"${cleanTitle(t)}" "${c}" (careers OR "lavora con noi" OR carriere OR jobs) -site:linkedin.com -site:indeed.com`),
+    finance: c => google(`"${c}" fatturato dipendenti`),
+    registry: c => google(`"${c}" dipendenti fatturato (site:aziende.it OR site:companyreports.it OR site:ufficiocamerale.it)`),
+    pay: c => google(`"${c}" (stipendio OR stipendi OR pagamenti) (ritardo OR puntuali OR "non pagano" OR arretrati) (site:indeed.com OR site:glassdoor.it OR site:reddit.com)`),
+    reviews: c => google(`"${c}" recensioni dipendenti (site:indeed.com OR site:glassdoor.it OR site:glassdoor.com)`),
+    reddit: c => google(`site:reddit.com "${c}" (lavoro OR colloquio OR stipendio OR truffa OR licenziato OR "ci ho lavorato" OR "lavoro lì")`),
+    trustpilot: c => 'https://it.trustpilot.com/search?query=' + encodeURIComponent(c),
+    news: c => google(`"${c}" (licenziamenti OR esuberi OR "cassa integrazione" OR crisi OR fallimento OR assunzioni)`, true),
+    salary: t => google(`"${cleanTitle(t)}" stipendio medio RAL Italia`)
+  };
+
+
+
+  // ======================================================================
+  // Dati ufficiali dell'azienda (Registro Imprese) letti dalle pagine che apri tu
+  // ======================================================================
+  // L'estensione non interroga questi siti da sola: legge la pagina dell'azienda quando la apri
+  // (aziende.it, companyreports.it, ufficiocamerale.it) e la collega agli annunci di quell'azienda.
+
+  const REGISTRY_RE = /(^|\.)(aziende\.it|companyreports\.it|ufficiocamerale\.it)$/;
+  const LEGAL = /\b(s\.?\s?r\.?\s?l\.?\s?s?|s\.?\s?p\.?\s?a\.?|s\.?\s?a\.?\s?s\.?|s\.?\s?n\.?\s?c\.?|soc(ieta)?\.?\s+coop(erativa)?\.?|scarl|unipersonale|societa\s+a\s+responsabilita\s+limitata(\s+semplificata)?|societa\s+per\s+azioni)\b/g;
+  function normCompany(c) {
+    return String(c || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/['’`]/g, '').replace(LEGAL, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+  const regKey = c => 'afreg:' + normCompany(c);
+  const revKey = c => 'afrev:' + normCompany(c);
+
+  const euro = v => v ? parseInt(String(v).replace(/[^\d-]/g, ''), 10) : null;
+
+  function parseRegistry(text) {
+    // Solo la scheda dell'azienda: si taglia prima degli elenchi di "altre aziende" (che hanno i loro stati)
+    let t = '\n' + text.replace(/\r/g, '');
+    const cut = t.search(/\n\s*(Altre aziende|Aziende simili|Aziende correlate|Aziende della stessa|Documenti ufficiali|Potrebbe interessarti)/i);
+    if (cut > 200) t = t.slice(0, cut);
+    const m = re => { const x = t.match(re); return x ? x : null; };
+    const r = {};
+    let x;
+    const STATI = '(ATTIVA|INATTIVA|CESSATA|IN LIQUIDAZIONE|SCIOLTA|FALLITA|IN FALLIMENTO|IN SCIOGLIMENTO|SOSPESA)';
+    if ((x = t.slice(0, 1500).match(new RegExp('\\n' + STATI + '\\n'))) || (x = m(/Stato Attivit[aà]\s*[\t|:\n]\s*([A-Za-zà ]{4,30})/i)) ||
+      (x = m(/risulta attualmente un.impresa\s+(attiva|inattiva|cessata)/i))) r.status = x[1].trim().toLowerCase();
+    if ((x = m(/(\d+)\nDipendenti\b/)) || (x = m(/contava\s+(\d+)\s+dipendenti/i)) || (x = m(/N\.?\s*Dipendenti\s*[\t|:\n]\s*(da \d+ a \d+|\d+(-\d+)?)/i)) ||
+      (x = m(/compreso tra\s+(\d+-\d+)\s+dipendenti/i)) || (x = m(/Dipendenti\s*[\t|:]\s*(\d+-\d+|\d+)\s*dipendenti/i))) r.employees = x[1];
+    if ((x = m(/€\s*([\d.]+)\nFatturato\s+(\d{4})/)) || (x = m(/Fatturato\s*[\t|:\n]\s*€?\s*([\d.]+)\s*(?:euro\s*)?\((\d{4})\)/i)) || (x = m(/fatturato di €\s*([\d.]+)/i))) {
+      r.revenue = euro(x[1]); if (x[2]) r.revenueYear = x[2];
+    }
+    if ((x = m(/([+-]\d+(?:,\d+)?)%\nVariazione/)) || (x = m(/in (calo|crescita) del (\d+(?:,\d+)?)%/i))) {
+      r.revenueChange = x.length > 2 && /calo|crescita/i.test(x[1]) ? (x[1].toLowerCase() === 'calo' ? '-' : '+') + x[2] : x[1];
+    }
+    if ((x = m(/€\s*([\d.]+)\n(Utile|Perdita)\s+(\d{4})/))) r.profit = (x[2] === 'Perdita' ? -1 : 1) * euro(x[1]);
+    else if ((x = m(/chiudendo con una perdita di €\s*([\d.]+)/i))) r.profit = -euro(x[1]);
+    else if ((x = m(/chiudendo con un utile di €\s*([\d.]+)/i))) r.profit = euro(x[1]);
+    else if ((x = m(/Utile\s*[\t|:\n]\s*€?\s*(-?[\d.]+)\s*(?:euro\s*)?\((\d{4})\)/i))) r.profit = euro(x[1]);
+    if ((x = m(/Data Iscrizione\s*[\t|:\n]\s*(\d{2}\/\d{2}\/(\d{4}))/i)) || (x = m(/Fondazione\s*[\t|:\n]\s*(\d{2}\/\d{2}\/(\d{4}))/i))) r.since = x[2];
+    else if ((x = m(/\ndal (\d{4})\n/))) r.since = x[1];
+    if ((x = m(/€\s*([\d.]+)\nCapitale sociale/i)) || (x = m(/Capitale Sociale\s*[\t|:\n]\s*€?\s*([\d.]+)/i))) r.capital = euro(x[1]);
+    if ((x = m(/P(?:artita)?\.?\s?IVA\s*[:\n\t]?\s*(\d{11})/i))) r.piva = x[1];
+    return r;
+  }
+
+  function maxEmployees(e) {
+    if (!e) return null;
+    const n = String(e).match(/\d+/g);
+    return n ? Math.max(...n.map(Number)) : null;
+  }
+
+  const fmtEuro = n => (n < 0 ? '-' : '') + Math.abs(n).toLocaleString('it-IT') + ' €';
+
+  function registrySummary(r) {
+    const out = [];
+    if (r.status) out.push(r.status === 'attiva' ? 'attiva' : r.status.toUpperCase());
+    if (r.employees) out.push(`${r.employees} dipendenti`);
+    if (r.revenue) out.push(`fatturato ${fmtEuro(r.revenue)}${r.revenueYear ? ' (' + r.revenueYear + ')' : ''}${r.revenueChange ? ', ' + r.revenueChange + '%' : ''}`);
+    if (r.profit !== undefined && r.profit !== null) out.push(r.profit < 0 ? `perdita ${fmtEuro(-r.profit)}` : `utile ${fmtEuro(r.profit)}`);
+    if (r.since) out.push(`dal ${r.since}`);
+    if (r.capital) out.push(`capitale ${fmtEuro(r.capital)}`);
+    return out.join(' · ');
+  }
+
+  const BIG_CLAIM_RE = /multinazional[ei]|leader (nel|del|di|in|a livello)|grande (azienda|gruppo|realt[aà])|gruppo (internazionale|leader)|realt[aà] (in forte|in continua|in costante) crescita|forte espansione|azienda strutturata|importante (gruppo|realt[aà])/i;
+
+  function requirementCount(text) {
+    let part = requirementsPart(text || '');
+    if (part === text) return 0;
+    part = part.slice(0, 2500);
+    // Una riga per requisito (elenchi puntati o righe brevi), esclusa la riga del titolo
+    const lines = part.split('\n').slice(1).map(l => l.trim()).filter(l => l.length >= 3 && l.length <= 220);
+    const bullets = lines.filter(l => /^([-•·*▪●–]|\d+[.)])\s*\S/.test(l) || /;\s*$/.test(l));
+    const inline = (part.match(/;/g) || []).length + 1;
+    return Math.max(bullets.length, lines.length > 2 ? lines.length : 0, inline > 3 ? inline : 0);
+  }
+
+  // Confronta l'annuncio con i dati ufficiali: segnali e motivi
+  function registryCheck(reg, adText) {
+    const out = [];
+    if (!reg) return out;
+    if (reg.status && reg.status !== 'attiva') out.push([3, 'rosso', `Nel Registro Imprese risulta "${reg.status}": un'azienda così non dovrebbe assumere`]);
+    const emp = maxEmployees(reg.employees);
+    const claim = (adText || '').match(BIG_CLAIM_RE);
+    if (claim && emp !== null && emp < 10) out.push([1, 'giallo', `L'annuncio parla di «${claim[0]}», ma i dati ufficiali dicono ${reg.employees} dipendenti`]);
+    const reqs = requirementCount(adText);
+    if (emp !== null && emp < 10 && reqs >= 10) out.push([1, 'giallo', `Chiede ${reqs} requisiti diversi a fronte di un'azienda di ${reg.employees} dipendenti: potrebbero cercare un tuttofare`]);
+    const ch = reg.revenueChange ? parseFloat(String(reg.revenueChange).replace(',', '.')) : 0;
+    if (reg.profit !== undefined && reg.profit !== null && reg.profit < 0 && ch <= -10) out.push([1, 'giallo', `Conti in difficoltà: perdita nell'ultimo bilancio e fatturato in calo (${reg.revenueChange}%)`]);
+    if (reg.since && new Date().getFullYear() - parseInt(reg.since, 10) < 1) out.push([0, 'grigio', 'Azienda iscritta da meno di un anno']);
+    return out;
+  }
+
+  // Sulle pagine dei registri: legge i dati e li collega agli annunci
+  async function registryMode() {
+    const text = (document.querySelector('main') || document.body).innerText || '';
+    const reg = parseRegistry(text);
+    if (!reg.employees && !reg.revenue && !reg.status) return; // non è la pagina di un'azienda
+    const name = ((document.querySelector('h1') || {}).textContent || document.title.split(/[:|–-]/)[0]).trim();
+    reg.name = name;
+    reg.source = location.hostname.replace(/^www\./, '');
+    reg.url = location.href;
+    reg.date = new Date().toISOString().slice(0, 10);
+    const pending = await store.get('afpending');
+    const forAd = pending && Date.now() - pending.time < 3600 * 1000 ? pending.company : null;
+    await store.set(regKey(name), reg);
+    if (forAd) await store.set(regKey(forAd), reg);
+
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = el('div',
+        'position:fixed;bottom:16px;right:16px;z-index:2147483647;width:300px;' +
+        'background:#fff;color:#222;border:1px solid #ccc;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);' +
+        'font:13px/1.4 system-ui,sans-serif;padding:10px 12px;text-align:left;letter-spacing:normal');
+      panel.id = PANEL_ID;
+      document.body.appendChild(panel);
+    }
+    panel.textContent = '';
+    const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
+    head.appendChild(el('div', 'font-weight:600', 'Dati ufficiali salvati'));
+    head.appendChild(button('×', () => panel.remove(), 'Chiudi'));
+    panel.appendChild(head);
+    small(panel, `${name}: ${registrySummary(reg)}`);
+    small(panel, forAd && normCompany(forAd) !== normCompany(name)
+      ? `Collegati agli annunci di «${forAd}». Controlla che sia la stessa azienda (stessa città, stessa attività): se non lo è, apri quella giusta.`
+      : 'Li vedrai nel riquadro degli annunci di questa azienda.');
+  }
+
+
+  // ======================================================================
+  // Pagano puntuali? Recensioni lette dalle pagine che apri tu (Indeed, Glassdoor)
+  // ======================================================================
+
+  const PAY_WORD = '(stipend[io]|pagament[io]|paga|busta paga|retribuzion[ei]|bonific[io]|tredicesima|quattordicesima|tfr|straordinari|compens[io])';
+  const PAY_WORD_RE = new RegExp(PAY_WORD, 'i');
+  const PAY_NEG = new RegExp(
+    PAY_WORD + '[^.!?\\n]{0,60}(in ritardo|ritard[io]|ritardat[aoie]|non (vengono |sono |erano |viene |è )?pagat[aoie]|mai pagat[aoie]|arretrat[aoie]|a singhiozzo|quando (gli pare|vogliono)|a rate)' +
+    '|(non pagano|pagano in ritardo|paga(no)? sempre in ritardo|ritard[io] (nei|nel|negli|sui|sugli) (pagament[io]|stipend[io])|senza stipendio|mesi senza (essere pagat|paga|stipendio)|devono ancora pagar|aspett(o|iamo|ando) ancora (lo |gli )?(stipend|pagament|soldi))', 'i');
+  const PAY_POS = new RegExp(
+    PAY_WORD + '[^.!?\\n]{0,40}(puntual[ei]|sempre (in orario|regolar[ei]|puntual[ei])|regolar[ei]|mai (un |in )?ritard[oi]|nessun ritardo|senza ritard[io])' +
+    '|(pagano|paga) (sempre )?(puntual|regolarmente|in orario)|puntualit[aà] (nei|nel|negli) (pagament|stipend)', 'i');
+
+  function paymentMentions(texts) {
+    const neg = [], pos = [];
+    for (const raw of texts) {
+      for (const sent of String(raw).split(/(?<=[.!?])\s+|\n+/)) {
+        const t = sent.trim();
+        if (t.length < 8) continue;
+        const noDelay = /(mai|nessun|senza|zero)( (un|alcun|avuto|stato|stata|in))* ritard[oi]/gi;
+        if (PAY_POS.test(t) && !PAY_NEG.test(t.replace(noDelay, ''))) { pos.push(t); continue; }
+        if (PAY_NEG.test(t.replace(noDelay, ''))) neg.push(t); else if (noDelay.test(t) && PAY_WORD_RE.test(t)) pos.push(t);
+      }
+    }
+    return { neg, pos };
+  }
+
+  const REVIEWS_PAGE = () => (/(^|\.)indeed\.[a-z.]+$/.test(location.hostname) && /^\/cmp\/[^/]+\/reviews/.test(location.pathname)) ||
+    (/(^|\.)glassdoor\.[a-z.]+$/.test(location.hostname) && /Recensioni|Reviews/i.test(location.pathname));
+
+  async function reviewsMode() {
+    const GATE = /Scrivi una recensione sulla tua azienda per visualizzare tutte le recensioni/i;
+    const cardTexts = [...new Set([...document.querySelectorAll('[data-testid="reviews[]"], [data-test="review-details-container"], [id^="empReview"]')]
+      .map(c => (c.innerText || '').trim()).filter(Boolean))];
+    const gated = cardTexts.some(t => GATE.test(t));
+    const cards = cardTexts;
+    const texts = cards.length ? cards.map(t => t.replace(GATE, '')) : [(document.querySelector('main') || document.body).innerText || ''];
+    const all = (document.querySelector('main') || document.body).innerText || '';
+    const { neg, pos } = paymentMentions(texts);
+    const payScore = (all.match(/Retribuzione e benefit\s*\n\s*(\d,\d)/) || all.match(/Compensation and Benefits\s*\n\s*(\d\.\d)/) || [])[1] || null;
+    const overall = (all.match(/Valutazione complessiva\s*\n\s*(\d,\d)/) || [])[1] || null;
+    const cmp = location.pathname.match(/^\/cmp\/([^/]+)/);
+    const name = cmp ? decodeURIComponent(cmp[1]).replace(/-/g, ' ') : ((document.querySelector('h1') || {}).textContent || '').replace(/recensioni|reviews/ig, '').trim();
+    const rev = {
+      source: location.hostname.replace(/^www\./, ''), url: location.href, date: new Date().toISOString().slice(0, 10),
+      read: cards.length || null, topic: /ftopic=paybenefits/.test(location.search),
+      neg: neg.length, pos: pos.length, negSamples: neg.slice(0, 3).map(t => t.slice(0, 160)), payScore, overall
+    };
+    const pending = await store.get('afpending');
+    const forAd = pending && Date.now() - pending.time < 3600 * 1000 ? pending.company : null;
+    // Più pagine lette della stessa azienda: si sommano
+    for (const k of [...new Set([revKey(name), forAd ? revKey(forAd) : null].filter(Boolean))]) {
+      const old = await store.get(k);
+      const merged = old && old.url !== rev.url ? { ...rev, neg: old.neg + rev.neg, pos: old.pos + rev.pos, read: (old.read || 0) + (rev.read || 0),
+        negSamples: [...rev.negSamples, ...(old.negSamples || [])].slice(0, 3), pages: (old.pages || 1) + 1 } : { ...rev, pages: 1 };
+      await store.set(k, merged);
+    }
+
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = el('div',
+        'position:fixed;bottom:16px;right:16px;z-index:2147483647;width:300px;max-height:70vh;overflow:auto;' +
+        'background:#fff;color:#222;border:1px solid #ccc;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);' +
+        'font:13px/1.4 system-ui,sans-serif;padding:10px 12px;text-align:left;letter-spacing:normal');
+      panel.id = PANEL_ID;
+      document.body.appendChild(panel);
+    }
+    panel.textContent = '';
+    const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
+    head.appendChild(el('div', 'font-weight:600', 'Pagano puntuali?'));
+    head.appendChild(button('×', () => panel.remove(), 'Chiudi'));
+    panel.appendChild(head);
+    small(panel, `In questa pagina (${rev.read || 'testo'} recensioni lette): ${neg.length} parlano di stipendi in ritardo o non pagati, ${pos.length} di pagamenti puntuali.`);
+    if (payScore) small(panel, `Voto "Retribuzione e benefit": ${payScore} su 5.`);
+    for (const t of rev.negSamples) small(panel, '✗ «' + t + '»');
+    if (!rev.topic && /indeed\./.test(location.hostname)) {
+      const u = new URL(location.href); u.searchParams.set('ftopic', 'paybenefits');
+      panel.appendChild(button('Solo recensioni su stipendio', () => { location.href = u.href; }, 'Filtra le recensioni sull\'argomento retribuzione'));
+    }
+    small(panel, (gated ? 'Indeed mostra il testo completo solo a chi scrive una recensione: leggo la parte visibile di ciascuna. ' : '') +
+      'Leggo solo le recensioni di questa pagina; aprendo la pagina successiva se ne aggiungono altre.' +
+      (forAd && normCompany(forAd) !== normCompany(name) ? ` Collegate agli annunci di «${forAd}»: controlla che sia la stessa azienda.` : ''));
+  }
+
+  function paymentCheck(rev) {
+    if (!rev) return [];
+    if (rev.neg >= 2) return [[2, 'rosso', `Pagamenti: ${rev.neg} recensioni parlano di stipendi in ritardo o non pagati`]];
+    if (rev.neg === 1) return [[1, 'giallo', 'Pagamenti: una recensione parla di stipendi in ritardo o non pagati']];
+    if (rev.pos >= 2) return [[0, 'verde', `Pagamenti: ${rev.pos} recensioni dicono che pagano puntuali`]];
+    return [];
+  }
+
+  // ======================================================================
+  // Come funziona la candidatura (ATS) — spiegato in parole semplici
+  // ======================================================================
+
+  // Fonti dei fatti qui sotto: documentazione dei produttori e guide per candidati (vedi README).
+  const ATS_INFO = [
+    { re: /myworkdayjobs\.com|myworkdaysite\.com/, name: 'Workday',
+      what: 'Programma usato soprattutto da grandi aziende. Ogni azienda ha il suo portale: di solito ti chiede di creare un account (email e password) valido solo per quell\'azienda.',
+      tips: ['Dopo aver caricato il CV controlla i campi compilati da soli (date, mansioni): spesso vanno corretti a mano.',
+        'Segnati email e password usate per questa azienda: per vedere lo stato della candidatura dovrai rientrare lì.'] },
+    { re: /greenhouse\.io/, name: 'Greenhouse',
+      what: 'Modulo breve su una sola pagina. L\'account non è obbligatorio.',
+      tips: ['Le domande aggiuntive del modulo le legge una persona: rispondi in modo mirato, non con frasi fatte.'] },
+    { re: /lever\.co/, name: 'Lever',
+      what: 'Modulo breve, di solito senza account.',
+      tips: ['Se c\'è un campo "informazioni aggiuntive", usalo per 3-4 righe che collegano la tua esperienza a questo annuncio.'] },
+    { re: /smartrecruiters\.com/, name: 'SmartRecruiters',
+      what: 'Modulo che può importare i tuoi dati dal CV o da LinkedIn.',
+      tips: ['Controlla quello che importa prima di inviare: a volte mescola esperienze e date.'] },
+    { re: /intervieweb\.it|in-recruiting\.com/, name: 'InRecruiting',
+      what: 'Programma italiano (gruppo Zucchetti), molto usato da aziende e agenzie in Italia. Spesso chiede di registrarti sul portale carriere dell\'azienda e di compilare il profilo campo per campo.',
+      tips: ['Compila tutti i campi del profilo, anche quelli che sembrano ripetere il CV: il selezionatore cerca proprio in quei campi.'] },
+    { re: /successfactors\.(com|eu)/, name: 'SAP SuccessFactors',
+      what: 'Programma usato da grandi aziende. Di solito richiede un account per azienda e un modulo lungo.',
+      tips: ['Tieni a portata di mano date precise di inizio e fine di ogni lavoro.'] },
+    { re: /taleo\.net|oraclecloud\.com\/hcmUI\/CandidateExperience/, name: 'Oracle (Taleo / Recruiting Cloud)',
+      what: 'Programma usato da grandi aziende. Di solito richiede un account e un modulo lungo.',
+      tips: ['Tieni a portata di mano date precise di inizio e fine di ogni lavoro.'] },
+    { re: /icims\.com/, name: 'iCIMS', what: 'Programma usato da grandi aziende, spesso con account e modulo in più passaggi.', tips: [] },
+    { re: /teamtailor\.com/, name: 'Teamtailor', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /recruitee\.com/, name: 'Recruitee', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /personio\.(de|com|it)/, name: 'Personio', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /workable\.com/, name: 'Workable', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] },
+    { re: /bamboohr\.com/, name: 'BambooHR', what: 'Modulo semplice sul sito carriere dell\'azienda.', tips: [] }
+  ];
+
+  const ATS_GENERAL = 'Un ATS è il programma con cui l\'azienda raccoglie e ordina le candidature. ' +
+    'Non è un robot che ti scarta da solo: legge il CV, ne estrae i dati, e il selezionatore cerca tra i candidati usando parole chiave. ' +
+    'Per questo conviene usare le stesse parole dell\'annuncio (se quelle competenze le hai davvero). ' +
+    'Il famoso "75% dei CV scartati dagli ATS" non ha fonti: viene da una pubblicità del 2012.';
+  const CV_TIPS = 'Per farti leggere bene: CV in PDF o Word con testo vero (non una foto o una scansione), ' +
+    'informazioni importanti fuori da tabelle, colonne e grafici, titoli semplici (Esperienze, Formazione, Competenze), date scritte sempre nello stesso modo.';
+
+  function detectApplication(adapter, header) {
+    const href = location.href;
+    const own = ATS_INFO.find(a => a.re.test(href));
+    if (own) return { kind: 'ats', ...own };
+    const links = [...document.querySelectorAll('a[href]')].map(a => a.href);
+    for (const a of ATS_INFO) {
+      if (links.some(h => a.re.test(h))) return { kind: 'ats', ...a, viaLink: true };
+    }
+    const portal = portalFor(location.hostname);
+    if (adapter && adapter.name === 'LinkedIn') {
+      if (/Candidatura semplice|Easy Apply/i.test(header)) return { kind: 'site', name: 'Candidatura semplice di LinkedIn',
+        what: 'La candidatura resta su LinkedIn: l\'azienda riceve il tuo profilo LinkedIn e il CV che alleghi.',
+        tips: ['Il profilo LinkedIn conta quanto il CV: titolo, competenze ed esperienze devono essere aggiornati.'] };
+      return { kind: 'unknown', name: 'Sito esterno',
+        what: 'Cliccando "Candidati" vai sul sito dell\'azienda. Quale programma usa lo vedrai lì: se è uno di quelli conosciuti, questo riquadro te lo spiega.', tips: [] };
+    }
+    if (adapter && adapter.name === 'Indeed') {
+      if (/sito dell.azienda|company site/i.test(header)) return { kind: 'unknown', name: 'Sito esterno',
+        what: 'La candidatura si fa sul sito dell\'azienda. Quale programma usa lo vedrai lì: se è uno di quelli conosciuti, questo riquadro te lo spiega.', tips: [] };
+      return { kind: 'site', name: 'Modulo di Indeed', what: 'La candidatura passa da Indeed, che inoltra il tuo CV all\'azienda.',
+        tips: ['Il CV caricato su Indeed è quello che vedono: tienilo aggiornato.'] };
+    }
+    if (portal && portal.name === 'Subito') return { kind: 'person', name: 'Messaggio a chi ha pubblicato',
+      what: 'Su Subito la candidatura è un messaggio a chi ha messo l\'annuncio: la legge una persona, non un programma.',
+      tips: ['Scrivi poche righe chiare con disponibilità, esperienza e un recapito; allega il CV se il sito lo permette.'] };
+    if (portal && portal.kind === 'agenzia') return { kind: 'site', name: `Banca dati di ${portal.name}`,
+      what: 'La candidatura entra nella banca dati dell\'agenzia. Un selezionatore dell\'agenzia cerca tra i candidati per parole chiave e ti propone all\'azienda cliente.',
+      tips: ['Tieni il profilo aggiornato: possono chiamarti anche per altre offerte.'] };
+    return null;
+  }
+
+  // --- Parole chiave dell'annuncio a confronto con il tuo CV (tutto nel browser) ---
+  const STOP = new Set(('a ad al alla alle allo agli ai anche ancora che chi ci con come da dal dalla dalle dei del della delle dello degli di e ed è gli ha hai hanno il in io la le lo loro ma mi ne nei nel nella nelle non noi o per più può quale quali quando questa queste questi questo se si sia sono su sua sue sui sul sulla suo suoi tra tu un una uno vi voi ' +
+    'essere avere fare deve devono dovrà sarà saranno verrà verranno ogni tutto tutti tutte molto buona buone buon buono ottima ottime ottimo ottimi forte elevata elevato capacità conoscenza conoscenze esperienza esperienze anni anno almeno preferibilmente gradita gradito graditi requisiti requisito ' +
+    'azienda aziende società cliente clienti ricerca ricerchiamo cerchiamo cerca offriamo offre offerta inserimento candidato candidati candidata candidatura figura risorsa ruolo posizione attività lavoro lavorare settore team area ambito ufficio sede zona orario orari contratto tempo livello ccnl ' +
+    'annuncio annunci mansioni principali seguenti relative relativo nostro nostra nostri vostro proprio propria possesso completano profilo descrizione info informazioni dettagli luogo data ' +
+    'dell dello degli delle nell nello negli sull qui qua cosa ogni come dove anche ancora presso tramite verso mentre dopo prima sempre molto poco tanto' +
+    ' ideale ideali base richiest richiesta richieste richiesti richiesto preferibile gradit titolo studio candidature candidatura persone persona siano essere stato stata avviso italiana italiano disponibile disponibilita ottim buon' +
+    ' competenze capacita conoscenze abilita volenteros motivat dinamic seri cercasi cerchiamo selezioniamo assumiamo eur euro determinato indeterminato nuove nuovi sulle sugli specifiche esigenze migliorare comunicare ' +
+    'the and for with you your our are will have has from that this job role team work years experience skills ability knowledge strong good').split(/\s+/).map(w => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  const PHRASES = ['pacchetto office', 'power bi', 'patente b', 'problem solving', 'customer care', 'customer service', 'data entry',
+    'social media', 'google analytics', 'partita doppia', 'lingua inglese', 'inglese fluente', 'help desk', 'service desk',
+    'project management', 'libero professionista', 'public speaking', 'lavoro di squadra', 'team working', 'gestione del tempo', 'carrelli elevatori', 'muletto'];
+
+  const norm = t => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const stem = w => (w.length >= 6 ? w.slice(0, w.length - 2) : w);
+
+  function requirementsPart(text) {
+    const i = text.search(/requisiti|competenze richieste|cosa cerchiamo|profilo ricercato|il candidato ideale|requirements|qualifications/i);
+    if (i < 0) return text;
+    const rest = text.slice(i);
+    const j = rest.slice(30).search(/cosa offriamo|offriamo|si offre|benefit|what we offer/i);
+    return j > 0 ? rest.slice(0, j + 30) : rest;
+  }
+
+  function adKeywords(text, max = 14) {
+    const src = norm(requirementsPart(text).slice(0, 8000));
+    const found = [];
+    for (const p of PHRASES) if (src.includes(norm(p))) found.push(p);
+    const counts = new Map();
+    const shown = new Map();
+    const order = [];
+    const raw = requirementsPart(text).slice(0, 8000).match(/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9+#.]{1,}/g) || [];
+    for (let w of raw) {
+      w = w.replace(/\.+$/, '');
+      const isAcr = /[A-Z]/.test(w) && (/^[A-Z0-9+#]{2,4}$/.test(w) || /^(?=.*[0-9+#])[A-Z0-9+#]{2,6}$/.test(w));
+      const n = norm(w);
+      if (!isAcr && (n.length < 4 || STOP.has(n))) continue;
+      if (isAcr && (STOP.has(n) || /^(QUI|PER|NON|CHI|CON|DEL|DAL|SUL|NEL|THE|AND|EUR|IVA|SRL|SPA|CV)$/.test(w))) continue;
+      if (found.some(p => norm(p).split(' ').includes(n))) continue;
+      const k = isAcr ? w : n;
+      if (!counts.has(k)) { order.push(k); shown.set(k, isAcr ? w : w.toLowerCase()); }
+      counts.set(k, (counts.get(k) || 0) + (isAcr ? 2 : 1));
+    }
+    const words = order.slice().sort((a, b) => counts.get(b) - counts.get(a) || order.indexOf(a) - order.indexOf(b));
+    return [...found, ...words.map(k => shown.get(k))].slice(0, max);
+  }
+
+  function inCv(term, cvNorm) {
+    const t = norm(term);
+    if (t.includes(' ')) return cvNorm.includes(t);
+    if (/^[a-z0-9+#]{2,6}$/.test(t) && term === term.toUpperCase()) return new RegExp('(^|[^a-z0-9])' + t.replace(/[+#.]/g, '\\$&') + '($|[^a-z0-9])').test(cvNorm);
+    return cvNorm.includes(stem(t));
+  }
+
+  function compareCv(adText, cv) {
+    const cvNorm = norm(cv || '');
+    const terms = adKeywords(adText);
+    return { have: terms.filter(t => inCv(t, cvNorm)), miss: terms.filter(t => !inCv(t, cvNorm)) };
+  }
+
+  // ======================================================================
+  // Interfaccia
+  // ======================================================================
+
+  const COLORS = { verde: '#2e7d32', giallo: '#f9a825', rosso: '#c62828', grigio: '#9e9e9e' };
+
+  function el(tag, style, text) {
+    const e = document.createElement(tag);
+    if (style) e.style.cssText = style;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function button(label, onClick, title) {
+    const b = el('button',
+      'margin:4px 6px 0 0;padding:4px 8px;border:1px solid #0a66c2;border-radius:12px;background:#fff;color:#0a66c2;cursor:pointer;font:12px system-ui,sans-serif',
+      label);
+    if (title) b.title = title;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  const open = url => window.open(url, '_blank', 'noopener');
+
+  function section(panel, text, hint) {
+    const d = el('div', 'margin-top:8px;border-top:1px solid #eee;padding-top:6px;color:#444;font-weight:600', text);
+    d.dataset.afSec = text;
+    if (hint) d.dataset.afHint = hint;
+    panel.appendChild(d);
+  }
+
+  // Trasforma ogni sezione in un blocco richiudibile; ricorda quali hai lasciato aperti
+  function collapseSections(panel) {
+    let cur = null;
+    for (const k of [...panel.children]) {
+      if (k.dataset && k.dataset.afSec) {
+        const name = k.dataset.afSec;
+        cur = el('details', 'margin-top:6px;border-top:1px solid #eee;padding-top:5px');
+        cur.dataset.af = name;
+        const sum = el('summary', 'cursor:pointer;color:#444;font-weight:600', name);
+        if (k.dataset.afHint) sum.appendChild(el('span', 'font-weight:400;color:#888;font-size:12px', ' — ' + k.dataset.afHint));
+        cur.appendChild(sum);
+        cur.open = !!ui.open[name];
+        panel.insertBefore(cur, k);
+        k.remove();
+        (c => c.addEventListener('toggle', () => { ui.open[name] = c.open; saveUi(); }))(cur);
+      } else if (cur && !(k.dataset && k.dataset.afFoot)) {
+        cur.appendChild(k);
+      }
+    }
+  }
+
+  function small(panel, text) {
+    panel.appendChild(el('div', 'color:#555;font-size:12px;margin-top:2px', text));
+  }
+
+  // Messaggio dentro il riquadro (niente finestre alert, che bloccano la pagina)
+  function note(text) {
+    const panel = document.getElementById(PANEL_ID);
+    if (!panel) return;
+    const n = el('div', 'margin-top:6px;padding:4px 6px;background:#fff8e1;border-radius:6px;font-size:12px', text);
+    panel.appendChild(n);
+    setTimeout(() => n.remove(), 5000);
+  }
+
+  function cvEditor(panel, text, done) {
+    if (panel.querySelector('#af-cv-box')) return;
+    const box = el('div', 'margin-top:6px');
+    box.id = 'af-cv-box';
+    const ta = el('textarea', 'width:100%;height:120px;box-sizing:border-box;font:12px system-ui,sans-serif');
+    ta.value = text;
+    ta.placeholder = 'Apri il tuo CV, seleziona tutto il testo (Ctrl+A), copialo e incollalo qui.';
+    box.appendChild(ta);
+    box.appendChild(button('Salva', async () => {
+      const v = ta.value.trim();
+      if (v) await store.set('afcv', { text: v.slice(0, 30000), date: new Date().toISOString().slice(0, 10) });
+      else await new Promise(res => chrome.storage.local.remove('afcv', res));
+      done();
+    }));
+    box.appendChild(button('Annulla', () => box.remove()));
+    (panel.querySelector('details[data-af^="Il tuo CV"]') || panel).appendChild(box);
+    ta.focus();
+  }
+
+  // Pagine del modulo di candidatura: qui mancano i dati dell'annuncio, quindi non si ricalcola il rischio
+  function isApplyFlow() {
+    const h = location.hostname, p = location.pathname + location.search;
+    if (/^(smartapply|apply|m5apply)\.indeed\.com$/.test(h)) return true;
+    if (/(^|\.)indeed\.[a-z.]+$/.test(h) && /\/(apply|indeedapply)(\/|$|\?)/i.test(p)) return true;
+    const ats = ATS_INFO.some(a => a.re.test(location.href));
+    return ats && /\/(apply|application|applications|candidatura|candidati|login|signin|register|createaccount)(\/|$|\?|\b)/i.test(p);
+  }
+
+  async function renderApplyMode() {
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = el('div',
+        'position:fixed;bottom:16px;right:16px;z-index:2147483647;width:320px;max-height:80vh;overflow:auto;' +
+        'background:#fff;color:#222;border:1px solid #ccc;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);' +
+        'font:13px/1.4 system-ui,sans-serif;padding:10px 12px;text-align:left;letter-spacing:normal');
+      panel.id = PANEL_ID;
+      document.body.appendChild(panel);
+    }
+    panel.textContent = '';
+    try { chrome.runtime.sendMessage({ type: 'af-score', score: null }); } catch (e) { /* ignora */ }
+    const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
+    head.appendChild(el('div', 'font-weight:600', 'Candidatura in corso'));
+    head.appendChild(button('×', () => panel.remove(), 'Chiudi'));
+    panel.appendChild(head);
+    const last = await store.get('aflast');
+    if (last && Date.now() - last.time < 6 * 3600 * 1000) {
+      const row = el('div', 'display:flex;align-items:center;margin-top:6px');
+      row.appendChild(el('span', `display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:${COLORS[last.level]}`));
+      row.appendChild(el('span', '', `${last.title} — ${last.company}: ${last.label.toLowerCase()} (punteggio ${last.score})`));
+      panel.appendChild(row);
+      small(panel, 'È il giudizio dato sulla pagina dell\'annuncio, dove ci sono tutte le informazioni. Qui sei nel modulo di candidatura: non lo ricalcolo, perché qui l\'annuncio non c\'è.');
+    } else {
+      small(panel, 'Sei nel modulo di candidatura. Il semaforo si calcola sulla pagina dell\'annuncio, dove ci sono tutte le informazioni.');
+    }
+    const qs = screeningQuestions();
+    if (qs.length) {
+      atsDot(panel, { level: 'rosso', label: 'Domande filtro in questo modulo: le risposte possono escluderti in automatico', kw: [], ko: [] });
+      for (const q of qs) small(panel, '· ' + q);
+      small(panel, 'Rispondi in modo veritiero. Se un requisito ti manca di poco (per esempio 2 anni invece di 3), scrivilo nel campo note invece di rinunciare.');
+    }
+    const app = ATS_INFO.find(a => a.re.test(location.href));
+    if (app) {
+      section(panel, 'Come ti candidi');
+      panel.appendChild(el('div', 'font-size:12px;margin-top:2px', 'Programma usato dall\'azienda: ' + app.name));
+      small(panel, app.what);
+      for (const t of app.tips || []) small(panel, '→ ' + t);
+    }
+  }
+
+
+
+  // ======================================================================
+  // Filtro ATS: è attivo? cosa cerca?
+  // Nessun sito pubblica le impostazioni del filtro: si deduce da quale programma raccoglie
+  // le candidature e da cosa l'annuncio dichiara indispensabile.
+  // ======================================================================
+  const KNOCKOUT_RE = /[^.\n;:]{0,70}\b(indispensabil\w*|imprescindibil\w*|obbligatori\w*|requisito (minimo|fondamentale|necessario|essenziale)|requisiti minimi|tassativ\w*|necessari\w* (il possesso|almeno|aver)|(almeno|minimo|non meno di)\s+\d+\s+anni|esperienza (pregressa )?(di|minima di)\s+\d+\s+anni|must have|required)\b[^.\n;]{0,70}/gi;
+
+  function knockouts(text) {
+    const out = [];
+    for (const m of (requirementsPart(text || '').slice(0, 6000) + '\n' + (text || '').slice(0, 1500)).matchAll(KNOCKOUT_RE)) {
+      const t = m[0].replace(/\s+/g, ' ').trim().replace(/^[-•·*▪●–\s]+/, '');
+      if (t.length > 8 && !out.some(o => o.includes(t) || t.includes(o))) out.push(t.length > 110 ? t.slice(0, 107) + '…' : t);
+      if (out.length >= 4) break;
+    }
+    return out;
+  }
+
+  function atsFilter(app, adText) {
+    const kw = adKeywords(adText || '', 8);
+    const ko = knockouts(adText);
+    let level, label;
+    if (app && (app.kind === 'ats' || app.kind === 'site')) {
+      level = ko.length ? 'rosso' : 'giallo';
+      label = ko.length ? 'Filtro attivo, con requisiti che possono escluderti' : 'Filtro attivo: ordina i candidati per parole chiave';
+    } else if (app && app.kind === 'person') {
+      level = 'grigio'; label = 'Nessun filtro automatico: la candidatura arriva a una persona';
+    } else if (ko.length) {
+      level = 'giallo'; label = 'Programma non riconosciuto, ma l\'annuncio ha requisiti di esclusione';
+    } else {
+      level = 'grigio'; label = 'Non si sa se c\'è un filtro: il programma si vede solo cliccando "Candidati"';
+    }
+    return { level, label, kw, ko };
+  }
+
+  // Nel modulo di candidatura le domande filtro sono scritte: si leggono
+  function screeningQuestions() {
+    const root = document.querySelector('form') || document.querySelector('main') || document.body;
+    const seen = new Set();
+    const out = [];
+    for (const e of root.querySelectorAll('label, legend, [data-testid*="question"], [class*="question"] h2, [class*="question"] h3')) {
+      const t = (e.innerText || '').replace(/\s+/g, ' ').replace(/\*$/, '').trim();
+      if (t.length < 12 || t.length > 200 || seen.has(t)) continue;
+      if (!/\?$|anni di esperienza|sei disposto|sei disponibile|hai |possiedi|patente|laurea|diploma|automunit|trasfert|turni|livello di|conoscenza|disponibilit[aà]|autorizzat|permesso di soggiorno|stipendio|ral\b|retribuzione/i.test(t)) continue;
+      seen.add(t); out.push(t);
+      if (out.length >= 8) break;
+    }
+    return out;
+  }
+
+  function atsDot(panel, f) {
+    const row = el('div', 'display:flex;align-items:flex-start;margin:6px 0 2px;font-size:12px');
+    row.appendChild(el('span', `flex:none;width:10px;height:10px;border-radius:50%;margin:3px 7px 0 0;background:${COLORS[f.level]}`));
+    const txt = el('div', '');
+    txt.appendChild(el('b', '', 'Filtro ATS: '));
+    txt.appendChild(document.createTextNode(f.label));
+    if (f.kw.length) txt.appendChild(el('div', 'color:#555', (f.level === 'grigio' ? 'Parole importanti dell\'annuncio: ' : 'Cerca probabilmente: ') + f.kw.join(', ')));
+    if (f.ko.length) txt.appendChild(el('div', 'color:#555', 'Può escluderti se manca: ' + f.ko.map(k => '«' + k + '»').join(' · ')));
+    row.appendChild(txt);
+    panel.appendChild(row);
+  }
+
+  // Sempre disponibile: dove segnalare
+  function reportBlock(panel, site) {
+    small(panel, 'Truffe, finti selezionatori, richieste di soldi o documenti: Polizia Postale. Lavoro nero, stipendi non pagati, contratti irregolari: Ispettorato del Lavoro (modulo INL 31, nella sezione Modulistica). Un annuncio scorretto va segnalato anche al sito dove l\'hai trovato.');
+    panel.appendChild(button('Polizia Postale', () => open('https://www.commissariatodips.it/'), 'Commissariato di P.S. online: segnalazioni e denunce di reati online'));
+    panel.appendChild(button('Ispettorato del Lavoro', () => open('https://www.ispettorato.gov.it/'), 'Richiesta di intervento ispettivo (modulo INL 31)'));
+    panel.appendChild(button('Racconta la tua esperienza', () => open(FORUM_URL), 'Spazio pubblico di discussione del progetto: esperienze di colloqui, annunci, pagamenti'));
+  }
+  const FORUM_URL = 'https://github.com/Dmitrij-Anatolievic/annunci-fantasma/discussions';
+
+  // ======================================================================
+  // Aggiornamenti
+  // ======================================================================
+  const ask = msg => new Promise(res => { try { chrome.runtime.sendMessage(msg, r => { void chrome.runtime.lastError; res(r); }); } catch (e) { res(null); } });
+
+  function updateSteps(box, upd) { // ripiego manuale: zip
+    box.textContent = '';
+    if (upd.firefox) {
+      small(box, 'Firefox: apri la pagina about:debugging#/runtime/this-firefox, premi "Carica componente aggiuntivo temporaneo" e scegli il file appena scaricato. Poi ricarica la pagina dell\'annuncio.');
+      return;
+    }
+    small(box, '1. Il file è nella cartella Download. Aprilo ed estrai tutto nella cartella dove hai installato l\'estensione, sovrascrivendo i file.');
+    small(box, '2. Premi "Ricarica estensione" qui sotto, poi ricarica la pagina dell\'annuncio.');
+    box.appendChild(button('Ricarica estensione', () => ask({ type: 'af-reload' }), 'Rilegge i file della cartella dell\'estensione'));
+  }
+
+  // Da fare una volta sola: caricare l'estensione dalla cartella dove l'aggiornamento scrive
+  function moveSteps(box, folder, firefox) {
+    const page = firefox ? 'about:debugging#/runtime/this-firefox' : 'chrome://extensions (su Brave brave://extensions, su Edge edge://extensions)';
+    small(box, 'La nuova versione è stata salvata in:');
+    box.appendChild(el('div', 'font:12px monospace;word-break:break-all;background:#f3f3f3;padding:3px 5px;border-radius:4px;margin:2px 0', folder));
+    small(box, 'ma il browser usa ancora l\'estensione da un\'altra cartella. Da fare una volta sola, poi Aggiorna farà tutto da solo:');
+    small(box, '1. Premi "Esporta" in fondo al riquadro: salvi Diario e dati.');
+    if (firefox) {
+      small(box, '2. Apri ' + page + ', premi "Carica componente aggiuntivo temporaneo" e scegli il file manifest.json dentro la cartella qui sopra.');
+    } else {
+      small(box, '2. Apri ' + page + ', premi "Rimuovi" su Annunci Fantasma.');
+      small(box, '3. Premi "Carica estensione non pacchettizzata" e scegli la cartella qui sopra.');
+    }
+    small(box, (firefox ? '3' : '4') + '. Ricarica la pagina dell\'annuncio e premi "Importa" per riavere i tuoi dati.');
+    box.appendChild(button('Copia percorso', () => { try { navigator.clipboard.writeText(folder); } catch (e) {} }, 'Copia il percorso della cartella'));
+  }
+
+  function updateBlock(panel, upd, again) {
+    const box = el('div', 'margin-top:2px');
+    panel.appendChild(box);
+    const draw = (u, last) => {
+      box.textContent = '';
+      if (last && last.ok) small(box, '✓ Aggiornamento alla ' + last.version + ' riuscito.');
+      if (last && !last.ok) moveSteps(box, last.folder, u && u.firefox);
+      if (!u) { small(box, 'Versione installata: ' + chrome.runtime.getManifest().version); }
+      else if (u.error) small(box, u.error);
+      else if (u.available) {
+        small(box, `Versione installata ${u.current}, disponibile ${u.latest}.`);
+        for (const n of (u.notes || []).slice(0, 4)) small(box, '· ' + n);
+      } else if (!(last && last.ok)) small(box, `Versione installata ${u.current}: è la più recente.`);
+      if (u && u.available) {
+        box.appendChild(button('Aggiorna', async () => {
+          const steps = el('div', 'margin-top:4px');
+          box.appendChild(steps);
+          if (!u.auto) { // versione pubblicata senza installazione automatica
+            const r = await ask({ type: 'af-download-update' });
+            if (r && r.ok) updateSteps(steps, u);
+            else small(steps, 'Scaricamento non riuscito' + (r && r.error ? ': ' + r.error : '') + '.');
+            return;
+          }
+          small(steps, 'Scarico e controllo i file…');
+          const r = await ask({ type: 'af-install-update' });
+          steps.textContent = '';
+          if (r && r.ok) {
+            small(steps, 'File aggiornati. Ricarico l\'estensione e la pagina…');
+            setTimeout(() => ask({ type: 'af-reload' }), 600);
+          } else {
+            small(steps, 'Aggiornamento non riuscito: ' + ((r && r.error) || 'errore sconosciuto') + '.');
+            steps.appendChild(button('Scarica lo zip', async () => {
+              const z = await ask({ type: 'af-download-update' });
+              if (z && z.ok) updateSteps(steps, u); else small(steps, 'Scaricamento non riuscito.');
+            }, 'Aggiornamento a mano'));
+          }
+        }, 'Scarica, controlla e installa la nuova versione'));
+      }
+      box.appendChild(button('Controlla aggiornamenti', async () => { small(box, 'Controllo…'); draw(await ask({ type: 'af-check-update', force: true }), last); }));
+    };
+    ask({ type: 'af-update-result' }).then(last => {
+      draw(upd, last);
+      if (last && last.ok) ask({ type: 'af-update-result-seen' });
+    });
+  }
+
+  async function render(ctx) {
+    const { site, company, title, key, result, companyInfo, app, adText } = ctx;
+    const again = () => render(ctx);
+
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = el('div',
+        'position:fixed;bottom:16px;right:16px;z-index:2147483647;width:320px;max-height:80vh;overflow:auto;' +
+        'background:#fff;color:#222;border:1px solid #ccc;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);' +
+        'font:13px/1.4 system-ui,sans-serif;padding:10px 12px;text-align:left;letter-spacing:normal');
+      panel.id = PANEL_ID;
+      document.body.appendChild(panel);
+    }
+    panel.textContent = '';
+
+    const diary = (await store.get(diaryKey(company))) || { applied: [], replies: 0 };
+    const check = (await store.get(siteKey(key))) || null;
+    const salaries = await recordSalary(title, company, site, result.salary, key);
+    const seen = await recordSeen(key);
+    // Stessa azienda e stesso titolo, ma indirizzo diverso: lo stesso annuncio ripubblicato
+    const dupK = 'afdup:' + normCompany(company) + '|' + normTitle(title);
+    const today0 = new Date().toISOString().slice(0, 10);
+    let dup = await store.get(dupK);
+    if (!dup) { dup = { first: today0, keys: [key] }; await store.set(dupK, dup); }
+    else if (!dup.keys.includes(key)) { dup.keys = dup.keys.concat(key).slice(-10); await store.set(dupK, dup); }
+
+    let score = result.score;
+    const reasons = result.reasons.slice();
+    const isAgency = companyInfo && companyInfo.agencySite;
+    const reg = isAgency ? null : await store.get(regKey(company));
+    for (const [pts, color, text] of registryCheck(reg, adText)) { score += pts; reasons.push([color, text]); }
+    const rev = await store.get(revKey(company));
+    for (const [pts, color, text] of paymentCheck(rev)) { score += pts; reasons.push([color, text]); }
+    const g0 = employeeGap(companyInfo || {});
+    if (g0 && g0.points) { score += g0.points; reasons.push(['giallo', g0.text]); }
+    const nApplied = diary.applied.length;
+    if (nApplied >= 3 && diary.replies === 0) {
+      score += 2;
+      reasons.push(['rosso', `Ti sei candidato ${nApplied} volte a questa azienda senza risposta`]);
+    }
+    const seenDays = Math.floor((Date.now() - Date.parse(seen.first)) / 86400000);
+    if (seenDays >= 7 && result.days !== null && result.days !== undefined && result.days < seenDays - 2) {
+      score += 2;
+      reasons.push(['rosso', `L'hai già visto il ${seen.first.split('-').reverse().join('/')}: la data di pubblicazione è stata rinnovata`]);
+    }
+    const dupDays = Math.floor((Date.now() - Date.parse(dup.first)) / 86400000);
+    if (!/non (indicata|riconosciuta)/i.test(company) && dup.keys.length > 1 && dup.keys[0] !== key && dupDays >= 7) {
+      score += 2;
+      reasons.push(['rosso', `Lo stesso annuncio (stessa azienda e titolo) l'hai già visto il ${dup.first.split('-').reverse().join('/')} a un altro indirizzo: è stato ripubblicato`]);
+    }
+    if (check && check.result === 'notfound') {
+      score += 2;
+      reasons.push(['rosso', `Non trovato sul sito dell'azienda (verificato il ${check.date})`]);
+    } else if (check && check.result === 'found') {
+      score = Math.max(0, score - 1);
+      reasons.push(['verde', `Presente sul sito dell'azienda (verificato il ${check.date})`]);
+    }
+
+    const level = score >= 4 ? ['rosso', 'Rischio alto'] : score >= 2 ? ['giallo', 'Rischio medio'] : ['verde', 'Rischio basso'];
+    try { chrome.runtime.sendMessage({ type: 'af-score', score, color: COLORS[level[0]] }); } catch (e) { /* estensione ricaricata: ignora */ }
+    store.set('aflast', { title, company, site, score, level: level[0], label: level[1], time: Date.now() });
+
+    // Intestazione
+    const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
+    const h = el('div', 'display:flex;align-items:center;font-weight:600');
+    h.appendChild(el('span', `display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;background:${COLORS[level[0]]}`));
+    h.appendChild(el('span', '', `${level[1]} (punteggio ${score})`));
+    const right = el('div', 'display:flex;align-items:center');
+    const toggle = el('button', 'border:none;background:none;cursor:pointer;font-size:16px;color:#666', minimized ? '▴' : '▾');
+    toggle.title = minimized ? 'Espandi' : 'Riduci';
+    toggle.addEventListener('click', () => {
+      minimized = !minimized;
+      saveUi();
+      again();
+    });
+    const close = el('button', 'border:none;background:none;cursor:pointer;font-size:16px;color:#666', '×');
+    close.title = 'Chiudi';
+    close.addEventListener('click', () => panel.remove());
+    right.appendChild(toggle);
+    right.appendChild(close);
+    head.appendChild(h);
+    head.appendChild(right);
+    panel.appendChild(head);
+    if (minimized) return;
+    const upd = await ask({ type: 'af-check-update' });
+    if (upd && upd.available) {
+      const b = el('div', 'margin:6px 0;padding:5px 7px;border-radius:6px;font-size:12px;background:#e8f0fe', `È disponibile la versione ${upd.latest}. `);
+      const go = el('a', 'color:#0a66c2;cursor:pointer;text-decoration:underline', 'Vedi come aggiornare');
+      go.addEventListener('click', () => { ui.open['Aggiornamenti'] = true; saveUi(); again(); });
+      b.appendChild(go);
+      panel.appendChild(b);
+    }
+
+    panel.appendChild(el('div', 'color:#666;margin:2px 0 6px', `${company} · ${site}`));
+
+    // Segnali
+    const ul = el('ul', 'margin:0;padding:0;list-style:none');
+    for (const [c, t] of reasons) {
+      const li = el('li', 'display:flex;align-items:flex-start;margin:2px 0');
+      li.appendChild(el('span', `flex:none;width:8px;height:8px;border-radius:50%;margin:5px 8px 0 0;background:${COLORS[c]}`));
+      li.appendChild(el('span', '', t));
+      ul.appendChild(li);
+    }
+    panel.appendChild(ul);
+
+    // Cosa fare, in una riga
+    const advice = result.scam
+      ? 'Possibile truffa: non inviare soldi, documenti o dati bancari. Se ti hanno già contattato, segnala.'
+      : level[0] === 'rosso' ? 'Molti segnali negativi: candidati solo se riesci a verificare che il posto esiste davvero.'
+      : level[0] === 'giallo' ? 'Qualche dubbio: controlla i punti gialli e l\'azienda prima di investirci tempo.'
+      : 'Nessun segnale forte. Un controllo sull\'azienda, qui sotto, resta una buona abitudine.';
+    panel.appendChild(el('div', `margin-top:6px;padding:5px 7px;border-radius:6px;font-size:12px;background:${result.scam || level[0] === 'rosso' ? '#fdecea' : level[0] === 'giallo' ? '#fff8e1' : '#edf7ed'}`, advice));
+    if (result.scam) panel.appendChild(button('Segnala alla Polizia Postale', () => open('https://www.commissariatodips.it/'), 'Apre il sito del Commissariato di P.S. online, dove si segnalano le truffe'));
+    const af = atsFilter(app, adText);
+    atsDot(panel, af);
+
+    // L'azienda: dati letti dalla pagina + ricerche con un clic
+    section(panel, 'L\'azienda', reg || rev ? 'dati letti ✓' : 'da verificare');
+    const ci = companyInfo || {};
+    const gap = employeeGap(ci);
+    const facts = [];
+    if (ci.employees) facts.push(`${ci.employees} dipendenti`);
+    if (ci.onLinkedIn) facts.push(`${ci.onLinkedIn} su LinkedIn`);
+    if (ci.followers) facts.push(`${ci.followers} follower`);
+    if (ci.sector) facts.push(ci.sector);
+    if (ci.rating) facts.push(`valutazione ${ci.rating}`);
+    small(panel, facts.length ? facts.join(' · ') : 'Questa pagina non riporta dati sull\'azienda.');
+    if (gap && !gap.points) small(panel, gap.text);
+    if (reg) {
+      small(panel, `Dati ufficiali (${reg.source}, letti il ${reg.date.split('-').reverse().join('/')}): ${registrySummary(reg)}`);
+    } else if (!isAgency) {
+      small(panel, 'Dati ufficiali non ancora letti: premi il pulsante qui sotto e apri la scheda dell\'azienda (stessa città e attività). Il riquadro li legge e li confronta con l\'annuncio.');
+    }
+    panel.appendChild(button('Dipendenti e fatturato ufficiali', () => { store.set('afpending', { company, time: Date.now() }); open(SEARCHES.registry(company)); }, 'Dati della Camera di Commercio (dipendenti dichiarati, fatturato, utile) su aziende.it, companyreports.it, ufficiocamerale.it'));
+    if (rev) {
+      small(panel, `Pagamenti (${rev.source}, ${rev.read || '?'} recensioni lette il ${rev.date.split('-').reverse().join('/')}): ${rev.neg} su ritardi o mancati pagamenti, ${rev.pos} su pagamenti puntuali${rev.payScore ? '; voto retribuzione ' + rev.payScore + '/5' : ''}.`);
+      for (const t of (rev.negSamples || []).slice(0, 2)) small(panel, '✗ «' + t + '»');
+    }
+    panel.appendChild(button('Pagano puntuali?', () => {
+      store.set('afpending', { company, time: Date.now() });
+      open(ci.reviewsUrl ? ci.reviewsUrl + '?ftopic=paybenefits' : SEARCHES.pay(company));
+    }, 'Apri le recensioni su stipendio e pagamenti: il riquadro le legge e conta ritardi e pagamenti puntuali'));
+    panel.appendChild(button('Recensioni', () => { store.set('afpending', { company, time: Date.now() }); open(ci.reviewsUrl || SEARCHES.reviews(company)); }, 'Recensioni di chi ci lavora o ci ha lavorato (Indeed, Glassdoor)'));
+    panel.appendChild(button('Reddit', () => open(SEARCHES.reddit(company)), 'Discussioni su Reddit: colloqui, stipendi, lamentele'));
+    panel.appendChild(button('Trustpilot', () => open(SEARCHES.trustpilot(company)), 'Recensioni dei clienti: un\'azienda che tratta male i clienti spesso tratta male anche i dipendenti'));
+    panel.appendChild(button('Notizie', () => open(SEARCHES.news(company)), 'Notizie recenti: assunzioni, licenziamenti, crisi'));
+
+    // Stipendi visti per lo stesso ruolo
+    section(panel, 'Stipendio');
+    if (result.salary) small(panel, `In questo annuncio: ${result.salary}`);
+    const others = salaries.filter(s => s.job !== key);
+    if (others.length) {
+      small(panel, `Per questo ruolo hai già visto ${others.length} ${others.length === 1 ? 'annuncio' : 'annunci'} con stipendio:`);
+      for (const s of others.slice(-3).reverse()) small(panel, `· ${s.salary} — ${s.company} (${s.date})`);
+    } else {
+      small(panel, 'Il confronto con altri annunci dello stesso ruolo cresce mentre ne guardi altri.');
+    }
+    panel.appendChild(button('Stipendi del ruolo', () => open(SEARCHES.salary(title)), 'Cerca lo stipendio medio di questo ruolo'));
+
+    // Come funziona la candidatura
+    section(panel, 'Come ti candidi');
+    if (app) {
+      panel.appendChild(el('div', 'font-size:12px;margin-top:2px', `${app.kind === 'ats' ? 'Programma usato dall\'azienda: ' : ''}${app.name}`));
+      small(panel, app.what);
+      for (const t of app.tips || []) small(panel, '→ ' + t);
+    } else {
+      small(panel, 'Da questa pagina non si capisce con quale programma l\'azienda raccoglie le candidature.');
+    }
+    const more = el('details', 'margin-top:4px;font-size:12px;color:#555');
+    more.appendChild(el('summary', 'cursor:pointer;color:#0a66c2', 'Cos\'è un ATS e come farsi leggere bene'));
+    more.appendChild(el('div', 'margin-top:4px', ATS_GENERAL));
+    more.appendChild(el('div', 'margin-top:4px', CV_TIPS));
+    panel.appendChild(more);
+
+    // Il tuo CV a confronto con l'annuncio
+    section(panel, 'Il tuo CV e questo annuncio');
+    const cv = await store.get('afcv');
+    if (cv && cv.text) {
+      const cmp = compareCv(adText || '', cv.text);
+      if (!cmp.have.length && !cmp.miss.length) {
+        small(panel, 'In questo annuncio non ho trovato parole chiave da confrontare.');
+      } else {
+        if (cmp.have.length) small(panel, '✓ Già nel tuo CV: ' + cmp.have.join(', '));
+        if (cmp.miss.length) small(panel, '✗ Non nel tuo CV: ' + cmp.miss.join(', '));
+        small(panel, 'Se queste cose le sai fare davvero, scrivile con le stesse parole dell\'annuncio. Non aggiungere quelle che non hai: al colloquio si vede.');
+      }
+      panel.appendChild(button('Cambia CV', () => { cvEditor(panel, cv.text, again); }, 'Incolla di nuovo il testo del tuo CV'));
+    } else {
+      small(panel, 'Incolla una volta il testo del tuo CV: su ogni annuncio vedrai quali parole chiave ti mancano. Il CV resta solo nel tuo browser.');
+      panel.appendChild(button('Incolla il tuo CV', () => { cvEditor(panel, '', again); }));
+    }
+
+    // Diario
+    section(panel, 'Il tuo diario', nApplied ? `${nApplied} candidature, ${diary.replies} risposte` : '');
+    small(panel, `Con questa azienda: ${nApplied} candidature, ${diary.replies} risposte`);
+    const already = diary.applied.some(a => a.job === key);
+    panel.appendChild(button(already ? 'Candidatura già segnata' : 'Mi sono candidato', async () => {
+      if (already) return;
+      diary.applied.push({ job: key, date: new Date().toISOString().slice(0, 10) });
+      await store.set(diaryKey(company), diary);
+      again();
+    }));
+    panel.appendChild(button('Mi hanno risposto', async () => {
+      diary.replies += 1;
+      await store.set(diaryKey(company), diary);
+      again();
+    }));
+
+    // Verifica sul sito aziendale
+    section(panel, 'È anche sul sito dell\'azienda?');
+    const today = () => new Date().toISOString().slice(0, 10);
+    panel.appendChild(button('Cerca sul web', () => open(SEARCHES.site(company, title))));
+    panel.appendChild(button(check && check.result === 'found' ? 'Trovato ✓' : 'Trovato', async () => {
+      await store.set(siteKey(key), { result: 'found', date: today() });
+      again();
+    }));
+    panel.appendChild(button(check && check.result === 'notfound' ? 'Non trovato ✓' : 'Non trovato', async () => {
+      await store.set(siteKey(key), { result: 'notfound', date: today() });
+      again();
+    }));
+
+    // Salvataggio dei propri dati
+    section(panel, 'I tuoi dati');
+    panel.appendChild(button('Esporta', exportData, 'Scarica diario, verifiche e stipendi visti'));
+    panel.appendChild(button('Importa', () => importData(again), 'Carica un file esportato e uniscilo ai dati attuali'));
+
+    section(panel, 'Segnala e confrontati', 'Polizia Postale, Ispettorato, esperienze');
+    reportBlock(panel, site);
+
+    section(panel, 'Aggiornamenti', upd && upd.available ? 'nuova versione ' + upd.latest : 'v' + chrome.runtime.getManifest().version);
+    updateBlock(panel, upd, again);
+
+    const foot = el('div', 'margin-top:6px;font-size:11px;color:#888',
+      'Indice di rischio, non un verdetto. I dati restano nel tuo browser.');
+    foot.dataset.afFoot = '1';
+    panel.appendChild(foot);
+    collapseSections(panel);
+  }
+
+  // ======================================================================
+  // Ciclo principale
+  // ======================================================================
+
+  function tick() {
+    if (document.hidden) return; // scheda in secondo piano: nessun lavoro
+    tickN++;
+    try { step(); } catch (e) { console.warn('Annunci Fantasma:', e); }
+  }
+
+  function clearPanel() {
+    const p = document.getElementById(PANEL_ID);
+    if (p) {
+      p.remove();
+      try { chrome.runtime.sendMessage({ type: 'af-score', score: '', color: '#9e9e9e' }); } catch (e) { /* ignora */ }
+    }
+  }
+
+  function step() {
+    if (REVIEWS_PAGE()) {
+      const k = 'rev:' + location.pathname + location.search;
+      if (k !== lastKey) { lastKey = k; setTimeout(reviewsMode, 1200); }
+      return;
+    }
+    if (REGISTRY_RE.test(location.hostname)) {
+      const k = 'reg:' + location.pathname;
+      if (k !== lastKey) { lastKey = k; registryMode(); }
+      return;
+    }
+    if (isApplyFlow()) {
+      const k = 'apply:' + location.hostname + location.pathname;
+      if (k !== lastKey) { lastKey = k; renderApplyMode(); }
+      return;
+    }
+    const adapter = pickAdapter();
+    if (!adapter) { clearPanel(); lastKey = ''; return; }
+    const key = adapter.key();
+    if (!key) return;
+    if (key === lastKey) return; // già analizzato (se l'hai chiuso, resta chiuso)
+    // Pagina che dopo vari tentativi non risulta un annuncio: si riprova di rado invece che ogni secondo e mezzo
+    if (key === failKey && fails >= 8 && tickN % 8 !== 0) return;
+
+    // Nasconde il riquadro mentre legge la pagina, così il suo testo non viene analizzato
+    const panelEl = document.getElementById(PANEL_ID);
+    if (panelEl) panelEl.style.display = 'none';
+    let info;
+    try { info = adapter.read(); } finally { if (panelEl) panelEl.style.display = ''; }
+    if (!info) {
+      if (key !== failKey) { failKey = key; fails = 0; }
+      fails++;
+      // Sui portali, una pagina che non è un annuncio non mostra il riquadro
+      if (adapter === portals) clearPanel();
+      return;
+    }
+
+    // Se l'azienda non è ancora caricata, riprova per qualche giro prima di arrendersi
+    if (!info.company) {
+      retries = key === retryKey ? retries + 1 : 1;
+      retryKey = key;
+      if (retries < 6) return;
+      info.company = 'Azienda non riconosciuta';
+    }
+
+    lastKey = key;
+    const ld = readJobPostingLD();
+    const site = siteName(adapter);
+    render({
+      site,
+      company: info.company,
+      title: info.title,
+      key: site + ':' + key,
+      result: analyze(info, ld),
+      companyInfo: info.companyInfo,
+      app: detectApplication(adapter, info.header || ''),
+      adText: info.kwText || ((info.header || '') + '\n' + (info.body || ''))
+    });
+  }
+
+  setInterval(tick, 1500);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  tick();
+})();

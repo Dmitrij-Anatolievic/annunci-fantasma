@@ -12,4 +12,4 @@ Contatto: tramite la pagina "Issues" del repository del progetto.
 
 ## Controllo degli aggiornamenti
 
-Dalla versione 2.1.0 l'estensione legge, al massimo ogni 12 ore, il file pubblico `version.json` del progetto su GitHub (raw.githubusercontent.com) per sapere qual è l'ultima versione. La richiesta non contiene dati tuoi. Il permesso "downloads" serve solo a scaricare l'aggiornamento quando premi **Aggiorna**.
+Dalla versione 2.1.0 l'estensione legge, al massimo ogni 12 ore, il file pubblico `version.json` del progetto su GitHub (raw.githubusercontent.com) per sapere qual è l'ultima versione. La richiesta non contiene dati tuoi. Il permesso "downloads" serve solo a scaricare l'aggiornamento quando premi **Aggiorna**: i file vengono scritti esclusivamente nella cartella `Download/annunci-fantasma` (o `annunci-fantasma-firefox`) e le voci vengono poi tolte dall'elenco dei download del browser.

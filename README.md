@@ -5,19 +5,19 @@ Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario per
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 2.3.1 (in prova)
+Versione: 2.4.0 (in prova)
 
 ## Scarica
 
-- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.3.1-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.3.1-chrome-brave-edge.zip)
-- **Firefox**: [annunci-fantasma-2.3.1-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.3.1-firefox.zip)
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.4.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.4.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-2.4.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.4.0-firefox.zip)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
 ## Da sapere prima di provarla
 
 - **È una versione di prova.** Il semaforo segnala indizi, non dà sentenze: un annuncio rosso non è per forza una truffa, uno verde non è per forza serio. Leggi sempre i motivi.
-- **Chrome, Brave, Edge:** per gli aggiornamenti estrai il nuovo zip **sempre nella stessa cartella** (sovrascrivi i file) e premi "Ricarica" nella pagina delle estensioni. Se cambi cartella, il browser la tratta come un'estensione nuova e il diario delle candidature riparte da zero.
+- **Chrome, Brave, Edge:** estrai lo zip in una cartella chiamata **`annunci-fantasma` dentro la cartella Download** (es. `C:\Users\tuonome\Downloads\annunci-fantasma`). Solo così il pulsante **Aggiorna** può installare da solo le versioni nuove.
 - **Firefox:** l'estensione resta attiva solo fino alla chiusura del browser; alla riapertura va caricata di nuovo. Per renderla permanente deve essere firmata da Mozilla (è gratis): lo faremo quando la versione sarà stabile.
 - **Privacy:** l'estensione legge solo la pagina che stai guardando e non invia dati a nessuno. Diario, verifiche, stipendi visti e il testo del tuo CV restano nel tuo browser.
 
@@ -60,7 +60,7 @@ Safari non è supportato: richiede un account sviluppatore Apple a pagamento.
 
 ### Chrome, Brave, Edge, Opera, Vivaldi
 
-1. Scarica ed estrai lo zip in una cartella. Per gli aggiornamenti usa **sempre la stessa cartella**: se cambi cartella, Chrome assegna un nuovo ID e il diario riparte da zero.
+1. Scarica lo zip ed estrailo in una cartella chiamata **`annunci-fantasma` dentro Download** (es. `C:\Users\tuonome\Downloads\annunci-fantasma`, su Mac/Linux `~/Downloads/annunci-fantasma`). Il nome conta: un'estensione può scrivere solo dentro Download, ed è lì che il pulsante Aggiorna installa le versioni nuove.
 2. In Chrome apri `chrome://extensions` e attiva **Modalità sviluppatore**.
 3. Clicca **Carica estensione non pacchettizzata** e scegli la cartella.
 4. Fissa l'icona nella barra degli strumenti (simbolo del puzzle → puntina).
@@ -70,18 +70,21 @@ Se l'analisi non parte da sola: **Dettagli** dell'estensione → **Accesso ai si
 ### Firefox
 
 1. Apri `about:debugging#/runtime/this-firefox`.
-2. **Carica componente aggiuntivo temporaneo** e scegli il file `manifest.json` dentro la cartella estratta dallo zip Firefox.
+2. **Carica componente aggiuntivo temporaneo** e scegli il file `manifest.json` dentro la cartella estratta dallo zip Firefox. Per gli aggiornamenti automatici chiama la cartella `annunci-fantasma-firefox` e mettila dentro Download.
 3. In Firefox un'estensione caricata così resta attiva fino alla chiusura del browser. Per installarla in modo permanente va firmata gratuitamente da Mozilla (addons.mozilla.org, anche come estensione non pubblica).
 4. Se l'analisi non parte: menu Estensioni → Annunci Fantasma → **Consenti sempre** sui siti di lavoro.
 
 ### Aggiornare
 
-Dalla versione 2.1.0 l'estensione controlla da sola se c'è una versione nuova e lo scrive in cima al riquadro. Nella sezione **Aggiornamenti** del riquadro:
+L'estensione controlla da sola se c'è una versione nuova e lo scrive nella sezione **Aggiornamenti** del riquadro.
 
-- **Chrome, Brave, Edge**: premi **Aggiorna** (lo zip finisce nella cartella Download), estrailo nella cartella dove hai installato l'estensione sovrascrivendo i file, poi premi **Ricarica estensione** e ricarica la pagina. Non serve disinstallare: diario e dati restano.
-- **Firefox**: premi **Aggiorna** e carica il file scaricato da `about:debugging` come la prima volta.
+**Dalla 2.4.0**: premi **Aggiorna**. L'estensione scarica i file nuovi da GitHub, controlla che siano integri (impronta SHA-256), sovrascrive la cartella `Download/annunci-fantasma`, si ricarica e ricarica la pagina. Diario e dati restano.
 
-Un aggiornamento del tutto automatico non è possibile finché l'estensione non sta in uno store: Chrome, su Windows e Mac, accetta estensioni fuori dal Chrome Web Store solo in modalità sviluppatore, e queste non si aggiornano da sole; Firefox le aggiorna da solo solo se sono firmate da Mozilla.
+Funziona solo se l'estensione è caricata proprio da quella cartella. Se non lo è, il riquadro lo rileva e spiega come spostarla **una volta sola**: Esporta i dati, Rimuovi l'estensione, Carica estensione non pacchettizzata dalla cartella giusta, Importa i dati.
+
+Se il browser ha l'opzione "Chiedi dove salvare ogni file" attiva, o trattiene un file come potenzialmente pericoloso (Ctrl+J → Mantieni), l'aggiornamento può fermarsi: in quel caso resta il pulsante **Scarica lo zip**, il metodo a mano.
+
+**Da una versione precedente alla 2.4.0** il pulsante scarica ancora lo zip: estrailo in `Download/annunci-fantasma`, poi segui i passi qui sopra (Esporta, Rimuovi, Carica dalla nuova cartella, Importa). È l'ultima volta che serve.
 
 ## Segnali e punteggio
 

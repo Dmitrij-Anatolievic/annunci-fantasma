@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.0 — 2026-11-13
+
+- Aggiornamento automatico: il pulsante Aggiorna scarica i file nuovi, ne controlla l'integrità e sovrascrive da solo la cartella Download/annunci-fantasma, poi ricarica estensione e pagina. Non serve più estrarre zip.
+- Requisito, una volta sola: l'estensione va caricata dalla cartella Download/annunci-fantasma (un'estensione può scrivere solo dentro Download). Se è caricata da un'altra cartella, il riquadro lo rileva e spiega come spostarla senza perdere il Diario (Esporta, poi Importa).
+- Se qualcosa va storto resta il vecchio metodo: pulsante "Scarica lo zip".
+
 ## 2.3.1 — 2026-11-13
 
 - Corretto: nella 2.3.0 la lettura della data interna di Indeed era stata inserita per errore nell'adattatore di LinkedIn, quindi su Indeed le date restavano "non indicate". Ora funziona.

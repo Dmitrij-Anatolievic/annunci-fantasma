@@ -1318,40 +1318,78 @@
   // ======================================================================
   const ask = msg => new Promise(res => { try { chrome.runtime.sendMessage(msg, r => { void chrome.runtime.lastError; res(r); }); } catch (e) { res(null); } });
 
-  function updateSteps(box, upd) {
+  function updateSteps(box, upd) { // ripiego manuale: zip
     box.textContent = '';
     if (upd.firefox) {
       small(box, 'Firefox: apri la pagina about:debugging#/runtime/this-firefox, premi "Carica componente aggiuntivo temporaneo" e scegli il file appena scaricato. Poi ricarica la pagina dell\'annuncio.');
       return;
     }
     small(box, '1. Il file è nella cartella Download. Aprilo ed estrai tutto nella cartella dove hai installato l\'estensione, sovrascrivendo i file.');
-    small(box, '2. Premi "Ricarica estensione" qui sotto, poi ricarica la pagina dell\'annuncio. Diario e dati restano.');
+    small(box, '2. Premi "Ricarica estensione" qui sotto, poi ricarica la pagina dell\'annuncio.');
     box.appendChild(button('Ricarica estensione', () => ask({ type: 'af-reload' }), 'Rilegge i file della cartella dell\'estensione'));
+  }
+
+  // Da fare una volta sola: caricare l'estensione dalla cartella dove l'aggiornamento scrive
+  function moveSteps(box, folder, firefox) {
+    const page = firefox ? 'about:debugging#/runtime/this-firefox' : 'chrome://extensions (su Brave brave://extensions, su Edge edge://extensions)';
+    small(box, 'La nuova versione è stata salvata in:');
+    box.appendChild(el('div', 'font:12px monospace;word-break:break-all;background:#f3f3f3;padding:3px 5px;border-radius:4px;margin:2px 0', folder));
+    small(box, 'ma il browser usa ancora l\'estensione da un\'altra cartella. Da fare una volta sola, poi Aggiorna farà tutto da solo:');
+    small(box, '1. Premi "Esporta" in fondo al riquadro: salvi Diario e dati.');
+    if (firefox) {
+      small(box, '2. Apri ' + page + ', premi "Carica componente aggiuntivo temporaneo" e scegli il file manifest.json dentro la cartella qui sopra.');
+    } else {
+      small(box, '2. Apri ' + page + ', premi "Rimuovi" su Annunci Fantasma.');
+      small(box, '3. Premi "Carica estensione non pacchettizzata" e scegli la cartella qui sopra.');
+    }
+    small(box, (firefox ? '3' : '4') + '. Ricarica la pagina dell\'annuncio e premi "Importa" per riavere i tuoi dati.');
+    box.appendChild(button('Copia percorso', () => { try { navigator.clipboard.writeText(folder); } catch (e) {} }, 'Copia il percorso della cartella'));
   }
 
   function updateBlock(panel, upd, again) {
     const box = el('div', 'margin-top:2px');
     panel.appendChild(box);
-    const draw = u => {
+    const draw = (u, last) => {
       box.textContent = '';
+      if (last && last.ok) small(box, '✓ Aggiornamento alla ' + last.version + ' riuscito.');
+      if (last && !last.ok) moveSteps(box, last.folder, u && u.firefox);
       if (!u) { small(box, 'Versione installata: ' + chrome.runtime.getManifest().version); }
       else if (u.error) small(box, u.error);
       else if (u.available) {
         small(box, `Versione installata ${u.current}, disponibile ${u.latest}.`);
         for (const n of (u.notes || []).slice(0, 4)) small(box, '· ' + n);
-      } else small(box, `Versione installata ${u.current}: è la più recente.`);
+      } else if (!(last && last.ok)) small(box, `Versione installata ${u.current}: è la più recente.`);
       if (u && u.available) {
         box.appendChild(button('Aggiorna', async () => {
-          const r = await ask({ type: 'af-download-update' });
           const steps = el('div', 'margin-top:4px');
           box.appendChild(steps);
-          if (r && r.ok) updateSteps(steps, u);
-          else small(steps, 'Scaricamento non riuscito' + (r && r.error ? ': ' + r.error : '') + '. Puoi scaricarlo dalla pagina GitHub del progetto.');
-        }, 'Scarica la nuova versione'));
+          if (!u.auto) { // versione pubblicata senza installazione automatica
+            const r = await ask({ type: 'af-download-update' });
+            if (r && r.ok) updateSteps(steps, u);
+            else small(steps, 'Scaricamento non riuscito' + (r && r.error ? ': ' + r.error : '') + '.');
+            return;
+          }
+          small(steps, 'Scarico e controllo i file…');
+          const r = await ask({ type: 'af-install-update' });
+          steps.textContent = '';
+          if (r && r.ok) {
+            small(steps, 'File aggiornati. Ricarico l\'estensione e la pagina…');
+            setTimeout(() => ask({ type: 'af-reload' }), 600);
+          } else {
+            small(steps, 'Aggiornamento non riuscito: ' + ((r && r.error) || 'errore sconosciuto') + '.');
+            steps.appendChild(button('Scarica lo zip', async () => {
+              const z = await ask({ type: 'af-download-update' });
+              if (z && z.ok) updateSteps(steps, u); else small(steps, 'Scaricamento non riuscito.');
+            }, 'Aggiornamento a mano'));
+          }
+        }, 'Scarica, controlla e installa la nuova versione'));
       }
-      box.appendChild(button('Controlla aggiornamenti', async () => { small(box, 'Controllo…'); draw(await ask({ type: 'af-check-update', force: true })); }));
+      box.appendChild(button('Controlla aggiornamenti', async () => { small(box, 'Controllo…'); draw(await ask({ type: 'af-check-update', force: true }), last); }));
     };
-    draw(upd);
+    ask({ type: 'af-update-result' }).then(last => {
+      draw(upd, last);
+      if (last && last.ok) ask({ type: 'af-update-result-seen' });
+    });
   }
 
   async function render(ctx) {
