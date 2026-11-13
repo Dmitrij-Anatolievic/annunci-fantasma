@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0 — 2026-11-13
+
+- Nuovo: **pallino del filtro ATS** in cima al riquadro. Dice se un programma di selezione è attivo, quali parole chiave cerca probabilmente e quali requisiti dell'annuncio possono escluderti ("indispensabile", "obbligatorio", "almeno 3 anni"). Nessun sito pubblica le impostazioni del filtro: è una stima basata sull'annuncio, e il riquadro lo dice.
+- Nel modulo di candidatura (Indeed, Workday, Lever…) il riquadro elenca le domande filtro presenti, quelle che possono escluderti in automatico.
+- Nuova sezione sempre visibile **Segnala e confrontati**: Polizia Postale (truffe), Ispettorato del Lavoro (lavoro nero, stipendi non pagati) e lo spazio di discussione del progetto per raccontare le proprie esperienze.
+
 ## 2.1.0 — 2026-11-11
 
 - Nuovo: **Aggiornamenti**. L'estensione controlla da sola se su GitHub c'è una versione nuova e lo segnala in cima al riquadro.

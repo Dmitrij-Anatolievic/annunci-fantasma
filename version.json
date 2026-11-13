@@ -1,10 +1,10 @@
 {
-  "version": "2.1.0",
-  "chrome": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.1.0-chrome-brave-edge.zip",
-  "firefox": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.1.0-firefox.zip",
+  "version": "2.2.0",
+  "chrome": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-chrome-brave-edge.zip",
+  "firefox": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-firefox.zip",
   "notes": [
-    "Nuovo: Aggiornamenti",
-    "Il pulsante Aggiorna scarica il pacchetto nella cartella Download; dopo averlo estratto nella cartella dell'estensione, Ricarica estensione ",
-    "Nuovi permessi: \"downloads\" (per scaricare l'aggiornamento) e lettura di raw.githubusercontent.com (per sapere qual è l'ultima versione)"
+    "Nuovo: pallino del filtro ATS in cima al riquadro",
+    "Nel modulo di candidatura (Indeed, Workday, Lever…) il riquadro elenca le domande filtro presenti, quelle che possono escluderti in automati",
+    "Nuova sezione sempre visibile Segnala e confrontati: Polizia Postale (truffe), Ispettorato del Lavoro (lavoro nero, stipendi non pagati) e l"
   ]
 }

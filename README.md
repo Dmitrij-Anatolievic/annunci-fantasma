@@ -5,12 +5,12 @@ Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario per
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 2.1.0 (in prova)
+Versione: 2.2.0 (in prova)
 
 ## Scarica
 
-- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.1.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.1.0-chrome-brave-edge.zip)
-- **Firefox**: [annunci-fantasma-2.1.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.1.0-firefox.zip)
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.2.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-2.2.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-firefox.zip)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
@@ -28,6 +28,8 @@ Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai
 - **Stipendio**: quello dell'annuncio e quelli che hai già visto per lo stesso ruolo (lo storico cresce mentre navighi), più la ricerca dello stipendio medio del ruolo.
 - **Dati ufficiali dell'azienda**: dal pulsante *Dipendenti e fatturato ufficiali* apri la scheda dell'azienda su aziende.it, companyreports.it o ufficiocamerale.it. L'estensione legge quello che la pagina mostra gratis (stato, dipendenti, fatturato, utile o perdita, anno di nascita) e lo confronta con l'annuncio: se un'azienda di 3 persone si presenta come "multinazionale", se è in liquidazione, se chiede mille competenze diverse come se cercasse un tuttofare, il riquadro te lo dice. L'estensione non interroga quei siti da sola: legge solo la pagina che apri tu.
 - **Pagano puntuali?**: apre le recensioni dei dipendenti su stipendio e retribuzione (su Indeed già filtrate). Il riquadro conta quante parlano di stipendi in ritardo, arretrati o non pagati e quante di pagamenti puntuali, e lo riporta su tutti gli annunci di quell'azienda. Legge solo la pagina che apri tu; su Indeed il testo completo delle recensioni è visibile solo a chi ne ha scritta una, quindi conta la parte visibile.
+- **Filtro ATS (pallino)**: grigio se non si sa, giallo se un programma ordina i candidati per parole chiave, rosso se l'annuncio ha requisiti che possono escluderti. Mostra le parole che il filtro cerca probabilmente e, nel modulo di candidatura, le domande filtro.
+- **Segnala e confrontati**: Polizia Postale per le truffe, Ispettorato del Lavoro per lavoro nero e stipendi non pagati, e lo [spazio di discussione](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/discussions) per raccontare colloqui, annunci e pagamenti.
 - **Come ti candidi**: con quale programma l'azienda raccoglie le candidature (gli "ATS": Workday, Greenhouse, InRecruiting…), spiegato in parole semplici: serve un account? il modulo è lungo? cosa conviene fare? Più una spiegazione di cos'è un ATS e di come scrivere un CV che si legga bene.
 - **Il tuo CV e questo annuncio**: incolli una volta il testo del tuo CV (resta solo nel tuo browser) e su ogni annuncio vedi quali parole chiave dei requisiti hai già e quali ti mancano. Se una competenza la hai davvero, scrivila con le stesse parole dell'annuncio; se non la hai, non aggiungerla.
 - **Diario** delle candidature e **verifica** sul sito dell'azienda.

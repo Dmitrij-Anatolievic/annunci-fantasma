@@ -1,4 +1,4 @@
-// Annunci Fantasma — v2.1.0
+// Annunci Fantasma — v2.2.0
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -984,7 +984,7 @@
     'the and for with you your our are will have has from that this job role team work years experience skills ability knowledge strong good').split(/\s+/).map(w => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
   const PHRASES = ['pacchetto office', 'power bi', 'patente b', 'problem solving', 'customer care', 'customer service', 'data entry',
     'social media', 'google analytics', 'partita doppia', 'lingua inglese', 'inglese fluente', 'help desk', 'service desk',
-    'project management', 'public speaking', 'lavoro di squadra', 'team working', 'gestione del tempo', 'carrelli elevatori', 'muletto'];
+    'project management', 'libero professionista', 'public speaking', 'lavoro di squadra', 'team working', 'gestione del tempo', 'carrelli elevatori', 'muletto'];
 
   const norm = t => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const stem = w => (w.length >= 6 ? w.slice(0, w.length - 2) : w);
@@ -1151,6 +1151,12 @@
     } else {
       small(panel, 'Sei nel modulo di candidatura. Il semaforo si calcola sulla pagina dell\'annuncio, dove ci sono tutte le informazioni.');
     }
+    const qs = screeningQuestions();
+    if (qs.length) {
+      atsDot(panel, { level: 'rosso', label: 'Domande filtro in questo modulo: le risposte possono escluderti in automatico', kw: [], ko: [] });
+      for (const q of qs) small(panel, '· ' + q);
+      small(panel, 'Rispondi in modo veritiero. Se un requisito ti manca di poco (per esempio 2 anni invece di 3), scrivilo nel campo note invece di rinunciare.');
+    }
     const app = ATS_INFO.find(a => a.re.test(location.href));
     if (app) {
       section(panel, 'Come ti candidi');
@@ -1160,6 +1166,75 @@
     }
   }
 
+
+
+  // ======================================================================
+  // Filtro ATS: è attivo? cosa cerca?
+  // Nessun sito pubblica le impostazioni del filtro: si deduce da quale programma raccoglie
+  // le candidature e da cosa l'annuncio dichiara indispensabile.
+  // ======================================================================
+  const KNOCKOUT_RE = /[^.\n;:]{0,70}\b(indispensabil\w*|imprescindibil\w*|obbligatori\w*|requisito (minimo|fondamentale|necessario|essenziale)|requisiti minimi|tassativ\w*|necessari\w* (il possesso|almeno|aver)|(almeno|minimo|non meno di)\s+\d+\s+anni|esperienza (pregressa )?(di|minima di)\s+\d+\s+anni|must have|required)\b[^.\n;]{0,70}/gi;
+
+  function knockouts(text) {
+    const out = [];
+    for (const m of (requirementsPart(text || '').slice(0, 6000) + '\n' + (text || '').slice(0, 1500)).matchAll(KNOCKOUT_RE)) {
+      const t = m[0].replace(/\s+/g, ' ').trim().replace(/^[-•·*▪●–\s]+/, '');
+      if (t.length > 8 && !out.some(o => o.includes(t) || t.includes(o))) out.push(t.length > 110 ? t.slice(0, 107) + '…' : t);
+      if (out.length >= 4) break;
+    }
+    return out;
+  }
+
+  function atsFilter(app, adText) {
+    const kw = adKeywords(adText || '', 8);
+    const ko = knockouts(adText);
+    let level, label;
+    if (app && (app.kind === 'ats' || app.kind === 'site')) {
+      level = ko.length ? 'rosso' : 'giallo';
+      label = ko.length ? 'Filtro attivo, con requisiti che possono escluderti' : 'Filtro attivo: ordina i candidati per parole chiave';
+    } else if (ko.length) {
+      level = 'giallo'; label = 'Programma non riconosciuto, ma l\'annuncio ha requisiti di esclusione';
+    } else {
+      level = 'grigio'; label = 'Non si sa se c\'è un filtro: il programma si vede solo cliccando "Candidati"';
+    }
+    return { level, label, kw, ko };
+  }
+
+  // Nel modulo di candidatura le domande filtro sono scritte: si leggono
+  function screeningQuestions() {
+    const root = document.querySelector('form') || document.querySelector('main') || document.body;
+    const seen = new Set();
+    const out = [];
+    for (const e of root.querySelectorAll('label, legend, [data-testid*="question"], [class*="question"] h2, [class*="question"] h3')) {
+      const t = (e.innerText || '').replace(/\s+/g, ' ').replace(/\*$/, '').trim();
+      if (t.length < 12 || t.length > 200 || seen.has(t)) continue;
+      if (!/\?$|anni di esperienza|sei disposto|sei disponibile|hai |possiedi|patente|laurea|diploma|automunit|trasfert|turni|livello di|conoscenza|disponibilit[aà]|autorizzat|permesso di soggiorno|stipendio|ral\b|retribuzione/i.test(t)) continue;
+      seen.add(t); out.push(t);
+      if (out.length >= 8) break;
+    }
+    return out;
+  }
+
+  function atsDot(panel, f) {
+    const row = el('div', 'display:flex;align-items:flex-start;margin:6px 0 2px;font-size:12px');
+    row.appendChild(el('span', `flex:none;width:10px;height:10px;border-radius:50%;margin:3px 7px 0 0;background:${COLORS[f.level]}`));
+    const txt = el('div', '');
+    txt.appendChild(el('b', '', 'Filtro ATS: '));
+    txt.appendChild(document.createTextNode(f.label));
+    if (f.kw.length) txt.appendChild(el('div', 'color:#555', 'Cerca probabilmente: ' + f.kw.join(', ')));
+    if (f.ko.length) txt.appendChild(el('div', 'color:#555', 'Può escluderti se manca: ' + f.ko.map(k => '«' + k + '»').join(' · ')));
+    row.appendChild(txt);
+    panel.appendChild(row);
+  }
+
+  // Sempre disponibile: dove segnalare
+  function reportBlock(panel, site) {
+    small(panel, 'Truffe, finti selezionatori, richieste di soldi o documenti: Polizia Postale. Lavoro nero, stipendi non pagati, contratti irregolari: Ispettorato del Lavoro (modulo INL 31, nella sezione Modulistica). Un annuncio scorretto va segnalato anche al sito dove l\'hai trovato.');
+    panel.appendChild(button('Polizia Postale', () => open('https://www.commissariatodips.it/'), 'Commissariato di P.S. online: segnalazioni e denunce di reati online'));
+    panel.appendChild(button('Ispettorato del Lavoro', () => open('https://www.ispettorato.gov.it/'), 'Richiesta di intervento ispettivo (modulo INL 31)'));
+    panel.appendChild(button('Racconta la tua esperienza', () => open(FORUM_URL), 'Spazio pubblico di discussione del progetto: esperienze di colloqui, annunci, pagamenti'));
+  }
+  const FORUM_URL = 'https://github.com/Dmitrij-Anatolievic/annunci-fantasma/discussions';
 
   // ======================================================================
   // Aggiornamenti
@@ -1304,6 +1379,8 @@
       : 'Nessun segnale forte. Un controllo sull\'azienda, qui sotto, resta una buona abitudine.';
     panel.appendChild(el('div', `margin-top:6px;padding:5px 7px;border-radius:6px;font-size:12px;background:${result.scam || level[0] === 'rosso' ? '#fdecea' : level[0] === 'giallo' ? '#fff8e1' : '#edf7ed'}`, advice));
     if (result.scam) panel.appendChild(button('Segnala alla Polizia Postale', () => open('https://www.commissariatodips.it/'), 'Apre il sito del Commissariato di P.S. online, dove si segnalano le truffe'));
+    const af = atsFilter(app, adText);
+    atsDot(panel, af);
 
     // L'azienda: dati letti dalla pagina + ricerche con un clic
     section(panel, 'L\'azienda', reg || rev ? 'dati letti ✓' : 'da verificare');
@@ -1414,6 +1491,9 @@
     section(panel, 'I tuoi dati');
     panel.appendChild(button('Esporta', exportData, 'Scarica diario, verifiche e stipendi visti'));
     panel.appendChild(button('Importa', () => importData(again), 'Carica un file esportato e uniscilo ai dati attuali'));
+
+    section(panel, 'Segnala e confrontati', 'Polizia Postale, Ispettorato, esperienze');
+    reportBlock(panel, site);
 
     section(panel, 'Aggiornamenti', upd && upd.available ? 'nuova versione ' + upd.latest : 'v' + chrome.runtime.getManifest().version);
     updateBlock(panel, upd, again);

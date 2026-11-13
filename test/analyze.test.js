@@ -15,6 +15,7 @@ eval(pick('  const num = t =>', '  const google = '));
 eval(pick('  // --- Parole chiave dell', '  // ======================================================================\n  // Interfaccia'));
 eval(pick('  const REGISTRY_RE', '  // Sulle pagine dei registri'));
 eval(pick('  const PAY_WORD', '  const REVIEWS_PAGE'));
+eval(pick('  const KNOCKOUT_RE', '  // Nel modulo di candidatura'));
 eval(pick('  function paymentCheck', '  // ======================================================================\n  // Come funziona la candidatura'));
 
 const has = (r, text) => r.reasons.some(([, t]) => t.includes(text));
@@ -294,6 +295,18 @@ test('Annuncio normale: nessun segnale di truffa o vetrina', () => {
 test('Azienda non indicata → richiamo al divieto di annunci anonimi', () => {
   const r = analyze({ title: 'Impiegato', company: 'Azienda non indicata', header: '', body: long }, null);
   assert(has(r, 'anonimi'));
+});
+
+test('Filtro ATS: requisiti indispensabili e anni minimi', () => {
+  const ad = 'Requisiti:\n- Laurea in Economia indispensabile\n- almeno 3 anni di esperienza nel ruolo\n- Conoscenza di SAP\nCosa offriamo: contratto';
+  const ko = knockouts(ad);
+  assert(ko.some(k => /Laurea/.test(k)) && ko.some(k => /3 anni/.test(k)) && !ko.some(k => /SAP/.test(k)));
+});
+
+test('Filtro ATS: Workday + requisiti → rosso; nessun programma né requisiti → grigio', () => {
+  const ad = 'Requisiti: patente B obbligatoria, Excel.';
+  assert(atsFilter({ kind: 'ats', name: 'Workday' }, ad).level === 'rosso');
+  assert(atsFilter(null, 'Cerchiamo persona motivata. Requisiti: Excel.').level === 'grigio');
 });
 
 test('Truffa: provvigioni e corso a pagamento', () => {
