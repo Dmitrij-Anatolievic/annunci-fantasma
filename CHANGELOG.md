@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.1 — 2026-11-13
+
+- Corretto: nella 2.3.0 la lettura della data interna di Indeed era stata inserita per errore nell'adattatore di LinkedIn, quindi su Indeed le date restavano "non indicate". Ora funziona.
+
 ## 2.3.0 — 2026-11-13
 
 Stress test su LinkedIn, Indeed, Randstad, Subito, Adecco, Manpower, Gi Group e Bakeca, e analisi delle lamentele di chi cerca lavoro (Reddit e guide sui "ghost job").

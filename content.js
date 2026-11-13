@@ -1,4 +1,4 @@
-// Annunci Fantasma — v2.3.0
+// Annunci Fantasma — v2.3.1
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -166,7 +166,7 @@
       const compBox = compEl ? growTo(compEl, 150) : null;
       const companyInfo = compBox ? parseLinkedInCompany(compBox.innerText || '') : null;
 
-      return { company, title, header, body, companyInfo, pubDays: indeedPubDays(this.key()) };
+      return { company, title, header, body, companyInfo };
     }
   };
 
@@ -253,7 +253,7 @@
       if (rating) companyInfo.rating = rating[1].replace(',', '.') + '/5 su Indeed';
       const cmpLink = root.querySelector('a[href*="/cmp/"]');
       if (cmpLink) companyInfo.reviewsUrl = cmpLink.href.split('?')[0].replace(/\/$/, '') + '/reviews';
-      return { company, title, header, body, companyInfo };
+      return { company, title, header, body, companyInfo, pubDays: indeedPubDays(this.key()) };
     }
   };
 
