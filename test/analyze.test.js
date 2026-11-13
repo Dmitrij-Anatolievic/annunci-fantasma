@@ -309,6 +309,68 @@ test('Filtro ATS: Workday + requisiti → rosso; nessun programma né requisiti 
   assert(atsFilter(null, 'Cerchiamo persona motivata. Requisiti: Excel.').level === 'grigio');
 });
 
+test('Data italiana "05/11/2026" = 5 novembre, non 11 maggio (Gi Group)', () => {
+  const d = parseDate('05/11/2026');
+  assert(new Date(d).getUTCMonth() === 10 && new Date(d).getUTCDate() === 5);
+});
+
+test('Data compatta "20261113T121507" (Manpower)', () => {
+  const d = new Date(parseDate('20261113T121507'));
+  assert(d.getUTCFullYear() === 2026 && d.getUTCMonth() === 10 && d.getUTCDate() === 13 && d.getUTCHours() === 12);
+});
+
+test('Scadenza precedente alla pubblicazione → incoerente (giallo), non "scaduto"', () => {
+  const posted = new Date(Date.now() - 8 * 864e5);
+  const dd = String(posted.getUTCDate()).padStart(2, '0') + '/' + String(posted.getUTCMonth() + 1).padStart(2, '0') + '/' + posted.getUTCFullYear();
+  const r = analyze({ title: 'Mandatario', header: '', body: long }, { datePosted: dd, validThrough: '2026-08-09' });
+  assert(has(r, 'incoerenti') && !has(r, 'Scaduto') && r.days < 10);
+});
+
+test('Indeed: data interna di 344 giorni → "fantasma" (+3)', () => {
+  const r = analyze({ title: 'Impiegato', header: 'Napoli', body: long, pubDays: 344 }, null);
+  assert(has(r, 'mesi') && has(r, 'fantasma'));
+});
+
+test('Oltre un anno → espresso in anni', () => {
+  const r = analyze({ title: 'Impiegato', header: '', body: long, pubDays: 1204 }, null);
+  assert(has(r, '3,3 anni'));
+});
+
+test('Fascia "€ 500 - € 25000" → troppo larga', () => {
+  const r = analyze({ title: 'Stage HR', header: '', body: long + ' Retribuzione: € 500 - € 25000 Annuale' }, null);
+  assert(has(r, 'troppo larga'));
+});
+
+test('Fascia scritta dentro i dati strutturati (Manpower) → troppo larga', () => {
+  const r = analyze({ title: 'Stage HR', header: '', body: long }, { baseSalary: { currency: '€', value: { value: '€ 500 - € 25000 Annuale', unitText: 'Annuale' } } });
+  assert(has(r, 'troppo larga'));
+});
+
+test('Fascia 24.000 - 28.000 € → nessun segnale', () => {
+  const r = analyze({ title: 'Impiegato', header: '', body: long + ' RAL 24.000 - 28.000 €' }, null);
+  assert(!has(r, 'troppo larga'));
+});
+
+test('Junior che chiede 3 anni di esperienza → incoerente', () => {
+  const r = analyze({ title: 'Impiegato amministrativo junior', header: '', body: long + ' Requisiti: almeno 3 anni di esperienza.' }, null);
+  assert(has(r, 'almeno 3 anni'));
+});
+
+test('"Urgente" ma online da 40 giorni', () => {
+  const r = analyze({ title: 'Magazziniere - urgente', header: '', body: long, pubDays: 40 }, null);
+  assert(has(r, 'urgente'));
+});
+
+test('"Valori spa Agenzia per il lavoro" riconosciuta come agenzia', () => {
+  const r = analyze({ title: 'Farmacista', company: 'Valori spa Agenzia per il lavoro', header: '', body: long }, null);
+  assert(has(r, 'agenzia'));
+});
+
+test('Parole chiave: niente "dell", "QUI", "candidature", "ideale"', () => {
+  const k = adKeywords('Requisiti: il candidato ideale dell\'area amministrazione, CLICCA QUI, invia candidature. Conoscenza di SAP e contabilità.');
+  assert(!k.some(w => /^(dell|QUI|candidature|ideale)$/i.test(w)) && k.includes('SAP'));
+});
+
 test('Truffa: provvigioni e corso a pagamento', () => {
   const r = analyze({ header: '', body: 'Guadagni illimitati! Corso a pagamento di 200 euro. Lavoro a provvigione.' }, null);
   assert(has(r, 'Ti chiedono di pagare'));
@@ -318,7 +380,7 @@ test('Truffa: provvigioni e corso a pagamento', () => {
 });
 
 test('Dati strutturati: annuncio scaduto ma online', () => {
-  const ld = { datePosted: new Date(Date.now() - 45 * 864e5).toISOString(), validThrough: '2026-01-01', baseSalary: { value: 30000 } };
+  const ld = { datePosted: new Date(Date.now() - 45 * 864e5).toISOString(), validThrough: new Date(Date.now() - 10 * 864e5).toISOString(), baseSalary: { value: 30000 } };
   const r = analyze({ header: '', body: long }, ld);
   assert(has(r, 'Scaduto'));
   assert(has(r, 'Online da circa 45 giorni'));

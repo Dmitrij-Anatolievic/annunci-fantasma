@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.3.0 — 2026-11-13
+
+Stress test su LinkedIn, Indeed, Randstad, Subito, Adecco, Manpower, Gi Group e Bakeca, e analisi delle lamentele di chi cerca lavoro (Reddit e guide sui "ghost job").
+
+**Errori corretti**
+- Indeed: nella pagina dei risultati la data non compare, quindi l'età dell'annuncio non veniva calcolata. Ora si legge la data interna di Indeed: nella stessa ricerca c'erano annunci online da 171, 520 e 1.204 giorni dati per "rischio basso".
+- Gi Group: la data all'italiana "05/11/2026" veniva letta come 11 maggio; un annuncio di 9 giorni risultava "online da 187 giorni" e "scaduto".
+- Manpower: la data compatta "20261113T121507" non veniva letta.
+- Adecco: il sito si è spostato su adecco.com/it-it e l'estensione lì non partiva.
+- Agenzie con "Agenzia per il lavoro" nel nome (es. su Bakeca) non venivano riconosciute come agenzie.
+- Filtro ATS: tolte dalle parole chiave le parole vuote ("dell", "QUI", "ideale", "candidature"…); sugli annunci di privati (Subito) il pallino dice che risponde una persona, non un programma.
+
+**Nuovi segnali** (dalle lamentele più frequenti)
+- Online da più di 3 mesi: segnale forte (+3), espresso in mesi o anni.
+- Stesso annuncio (stessa azienda e titolo) già visto a un altro indirizzo: ripubblicato.
+- Fascia di stipendio senza senso (es. 500 – 25.000 €).
+- Posizione "junior", stage o apprendistato che chiede anni di esperienza.
+- "Urgente" ma online da più di un mese.
+- Scadenza precedente alla data di pubblicazione: date incoerenti.
+
 ## 2.2.0 — 2026-11-13
 
 - Nuovo: **pallino del filtro ATS** in cima al riquadro. Dice se un programma di selezione è attivo, quali parole chiave cerca probabilmente e quali requisiti dell'annuncio possono escluderti ("indispensabile", "obbligatorio", "almeno 3 anni"). Nessun sito pubblica le impostazioni del filtro: è una stima basata sull'annuncio, e il riquadro lo dice.

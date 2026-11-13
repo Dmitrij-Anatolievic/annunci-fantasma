@@ -5,12 +5,12 @@ Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario per
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 2.2.0 (in prova)
+Versione: 2.3.0 (in prova)
 
 ## Scarica
 
-- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.2.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-chrome-brave-edge.zip)
-- **Firefox**: [annunci-fantasma-2.2.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-firefox.zip)
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.3.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.3.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-2.3.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.3.0-firefox.zip)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
@@ -87,6 +87,7 @@ Un aggiornamento del tutto automatico non è possibile finché l'estensione non 
 
 | Segnale | Punti |
 | --- | --- |
+| Online da più di 3 mesi | +3 |
 | Online da 30 giorni o più (anche "1 mese fa") | +2 |
 | Online da 14 a 29 giorni | +1 |
 | Annuncio ripubblicato (+1 se meno di 14 giorni fa) | +2 |
@@ -107,6 +108,11 @@ Un aggiornamento del tutto automatico non è possibile finché l'estensione non 
 | Dati ufficiali: 10 o più requisiti diversi per un'azienda con meno di 10 dipendenti (possibile tuttofare) | +1 |
 | Dati ufficiali: perdita e fatturato in calo | +1 |
 | Annuncio di un privato su Subito | +1 |
+| Stesso annuncio già visto a un altro indirizzo (ripubblicato) | +2 |
+| Fascia di stipendio troppo larga (il massimo è almeno il triplo del minimo) | +1 |
+| Junior, stage o apprendistato che chiede 2 o più anni di esperienza | +1 |
+| "Urgente" ma online da più di 30 giorni | +1 |
+| Scadenza precedente alla pubblicazione (date incoerenti) | +1 |
 | Guadagni facili o lavoretti "a compito" (possibile truffa) | +2 |
 | Documenti o dati bancari chiesti già nell'annuncio (possibile truffa) | +2 |
 | Prova o periodo di lavoro non pagato | +2 |

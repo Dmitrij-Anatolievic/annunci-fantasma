@@ -1,10 +1,11 @@
 {
-  "version": "2.2.0",
-  "chrome": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-chrome-brave-edge.zip",
-  "firefox": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.2.0-firefox.zip",
+  "version": "2.3.0",
+  "chrome": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.3.0-chrome-brave-edge.zip",
+  "firefox": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.3.0-firefox.zip",
   "notes": [
-    "Nuovo: pallino del filtro ATS in cima al riquadro",
-    "Nel modulo di candidatura (Indeed, Workday, Lever…) il riquadro elenca le domande filtro presenti, quelle che possono escluderti in automati",
-    "Nuova sezione sempre visibile Segnala e confrontati: Polizia Postale (truffe), Ispettorato del Lavoro (lavoro nero, stipendi non pagati) e l"
+    "Indeed: nella pagina dei risultati la data non compare, quindi l'età dell'annuncio non veniva calcolata",
+    "Gi Group: la data all'italiana \"05/11/2026\" veniva letta come 11 maggio; un annuncio di 9 giorni risultava \"online da 187 giorni\" e \"scaduto",
+    "Manpower: la data compatta \"20261113T121507\" non veniva letta.",
+    "Adecco: il sito si è spostato su adecco.com/it-it e l'estensione lì non partiva."
   ]
 }

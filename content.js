@@ -1,4 +1,4 @@
-// Annunci Fantasma — v2.2.0
+// Annunci Fantasma — v2.3.0
 // Automatico su LinkedIn, Indeed e sui principali portali di lavoro e pagine carriere;
 // su qualsiasi altro sito parte quando clicchi l'icona dell'estensione.
 // Legge solo la pagina che stai guardando. Non invia dati a nessun server:
@@ -39,6 +39,19 @@
 
   // "6 giorni fa", "1 mese fa", "Ripubblicata 17 ore fa", "Posted 3 weeks ago", "un mese fa"
   const AGE_RE = /(Ripubblicat[ao]\s+|Pubblicat[ao]\s+|Reposted\s+|Posted\s+|Attivo\s+|Active\s+)?(\d+|un[ao]?|an?)\s+(minut[oi]|minutes?|or[ae]|hours?|giorn[oi]|days?|settiman[ae]|weeks?|mes[ei]|months?|ann[oi]|years?)\s+(fa|ago)\b/i;
+
+  // Date dei dati strutturati: ISO, compatte (20261113T121507) e all'italiana (05/11/2026 = 5 novembre)
+  function parseDate(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') return v > 1e11 ? v : v * 1000;
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?)?/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+    if (m) return Date.UTC(+m[3], +m[2] - 1, +m[1]);
+    const t = Date.parse(s);
+    return isNaN(t) ? null : t;
+  }
 
   function unitDays(u) {
     u = u.toLowerCase();
@@ -153,9 +166,30 @@
       const compBox = compEl ? growTo(compEl, 150) : null;
       const companyInfo = compBox ? parseLinkedInCompany(compBox.innerText || '') : null;
 
-      return { company, title, header, body, companyInfo };
+      return { company, title, header, body, companyInfo, pubDays: indeedPubDays(this.key()) };
     }
   };
+
+  // Indeed nasconde la data nella pagina dei risultati, ma la tiene nei dati della pagina (pubDate)
+  const indeedDateCache = new Map();
+  function indeedPubDays(jk) {
+    if (!jk) return null;
+    if (!indeedDateCache.has(jk)) {
+      let ts = null;
+      const needle = '"jobkey":"' + jk + '"';
+      for (const sc of document.scripts) {
+        const t = sc.textContent;
+        const i = t.indexOf(needle);
+        if (i < 0) continue;
+        const ctx = t.slice(Math.max(0, i - 2000), i + 3000);
+        const m = ctx.match(/"pubDate":(\d{12,14})/) || ctx.match(/"createDate":(\d{12,14})/);
+        if (m) { ts = Number(m[1]); break; }
+      }
+      if (ts) indeedDateCache.set(jk, ts);
+      else return null;
+    }
+    return (Date.now() - indeedDateCache.get(jk)) / DAY;
+  }
 
   function parseLinkedInCompany(text) {
     const l = lines(text);
@@ -242,6 +276,7 @@
     { re: /(^|\.)welcometothejungle\.com$/, name: 'Welcome to the Jungle', kind: 'portale' },
     { re: /(^|\.)randstad\.it$/, name: 'Randstad', kind: 'agenzia' },
     { re: /(^|\.)adecco\.it$/, name: 'Adecco', kind: 'agenzia' },
+    { re: /(^|\.)adecco\.com$/, name: 'Adecco', kind: 'agenzia', detail: /^\/it-it\/cerca-lavoro\/.+\/[\d-]+\/?$/ },
     { re: /(^|\.)manpower\.it$/, name: 'Manpower', kind: 'agenzia' },
     { re: /(^|\.)gigroup\.it$/, name: 'Gi Group', kind: 'agenzia' },
     { re: /(^|\.)umana\.it$/, name: 'Umana', kind: 'agenzia' },
@@ -413,6 +448,16 @@
   const UNPAID_RE = /(giornat\w+ di prova|periodo di prova|settiman\w+ di prova|\bprova)[^.\n]{0,30}(non retribuit\w+|gratuit\w+|senza (compenso|retribuzione))|(formazione|affiancamento|stage|tirocinio)[^.\n]{0,30}non retribuit\w+|solo rimborso spese|a titolo gratuito|non (è )?(previst[ao]|prevede) (alcun[ao]? )?(retribuzione|compenso)/i;
   const EVERGREEN_RE = /siamo sempre alla ricerca|sempre alla ricerca di (nuov|talent|figur|person|profil)|(per|in vista di) (eventuali )?futur[ei] (opportunit|selezion|necessit|esigenz|apertur|inseriment)|eventuali future|talent pool|bacino di candidat|banca dati (di )?(cv|curricul|candidat)|non (abbiamo|ci sono) posizioni aperte/i;
 
+  function salaryRange(ld, text) {
+    const v = ld && ld.baseSalary && (ld.baseSalary.value || ld.baseSalary);
+    if (v && v.minValue && v.maxValue) return { min: +v.minValue, max: +v.maxValue };
+    if (ld && ld.baseSalary) text = JSON.stringify(ld.baseSalary) + '\n' + text; // es. Manpower: "€ 500 - € 25000 Annuale" dentro il valore
+    const m = text.match(/(?:€|EUR)\s?([\d.]{3,9})(?:,\d+)?\s*[-–]\s*(?:€|EUR)?\s?([\d.]{3,9})|([\d.]{3,9})\s*(?:€|EUR|euro)?\s*[-–]\s*([\d.]{3,9})\s*(?:€|EUR|euro)/i);
+    if (!m) return null;
+    const a = parseInt((m[1] || m[3]).replace(/\./g, ''), 10), b = parseInt((m[2] || m[4]).replace(/\./g, ''), 10);
+    return a && b && b > a ? { min: a, max: b } : null;
+  }
+
   const SALARY_RE = /(€|EUR|USD|\$)\s?\d|\d[\d.,]*\s?[Kk]?\s?(€|EUR|USD|euro\b)|\/\s?(yr|hr)\b|\d[\d.,]*\s*(lordi|netti)?\s*(all.anno|all.ora|al mese|mensili)|\bRAL\b\s*:?\s*\d/i;
 
   function salaryText(info, ld) {
@@ -452,9 +497,9 @@
     // --- Età dell'annuncio: dai dati strutturati o dal testo dell'intestazione ---
     let days = null;
     let reposted = false;
-    if (ld && ld.datePosted && !isNaN(Date.parse(ld.datePosted))) {
-      days = (Date.now() - Date.parse(ld.datePosted)) / DAY;
-    }
+    const posted = ld ? parseDate(ld.datePosted) : null;
+    if (info.pubDays !== undefined && info.pubDays !== null) days = info.pubDays; // data interna del sito (Indeed)
+    else if (posted !== null && posted <= Date.now() + DAY) days = Math.max(0, (Date.now() - posted) / DAY);
     const ageSrc = header || body.slice(0, 1500);
     const m = ageSrc.match(AGE_RE);
     if (m) {
@@ -469,17 +514,20 @@
     if (days === null && /più di 30 giorni/i.test(ageSrc)) days = 31;
 
     if (days === null) add(0, 'grigio', 'Data di pubblicazione non indicata');
+    else if (days >= 90) add(3, 'rosso', `Online da circa ${days >= 365 ? (days / 365).toFixed(1).replace('.', ',') + ' anni' : Math.round(days / 30) + ' mesi'}: quasi certamente un annuncio "fantasma" o sempre aperto`);
     else if (days >= 30) add(2, 'rosso', `Online da circa ${Math.round(days)} giorni`);
     else if (days >= 14) add(1, 'giallo', `Online da circa ${Math.round(days)} giorni`);
-    else add(0, 'verde', days < 1 ? 'Pubblicato da meno di un giorno' : `Pubblicato da circa ${Math.round(days)} giorni`);
+    else add(0, 'verde', days < 1 ? 'Pubblicato da meno di un giorno' : (Math.round(days) === 1 ? 'Pubblicato da circa 1 giorno' : `Pubblicato da circa ${Math.round(days)} giorni`));
 
     if (reposted) {
       if (days !== null && days < 14) add(1, 'giallo', 'Annuncio ripubblicato di recente');
       else add(2, 'rosso', 'Annuncio ripubblicato');
     }
 
-    if (ld && ld.validThrough && !isNaN(Date.parse(ld.validThrough)) && Date.parse(ld.validThrough) < Date.now()) {
-      add(2, 'rosso', 'Scaduto secondo i dati dell\'annuncio, ma ancora online');
+    const until = ld ? parseDate(ld.validThrough) : null;
+    if (until !== null && until < Date.now()) {
+      if (posted !== null && until < posted) add(1, 'giallo', 'Date dell\'annuncio incoerenti: la scadenza è precedente alla pubblicazione (spesso succede quando un annuncio vecchio viene ripubblicato)');
+      else add(2, 'rosso', 'Scaduto secondo i dati dell\'annuncio, ma ancora online');
     }
     if (/Non accetta più candidature|No longer accepting applications|annuncio scaduto|offerta scaduta/i.test(header + body.slice(0, 2000))) {
       add(3, 'rosso', 'Non accetta più candidature');
@@ -511,7 +559,7 @@
 
     // --- Chi pubblica: agenzia o società di selezione al posto dell'azienda finale ---
     const ci = info.companyInfo || {};
-    const agency = ci.agencySite ||
+    const agency = ci.agencySite || /agenzia per il lavoro|\bapl\b|lavoro temporaneo|staffing|recruit(ing|ment)|selezione del personale|head ?hunt|executive search/i.test(info.company || '') ||
       (ci.sector && /risorse umane|staffing|recruit|selezione|human resources/i.test(ci.sector)) ||
       /per (importante|primaria|nota) (azienda|società) cliente|per (conto di|una) (azienda|società) cliente|nostr[oa] client[ei]|our client/i.test(body);
     if (agency) add(1, 'giallo', 'Pubblicato da un\'agenzia o società di selezione: l\'azienda finale non è indicata');
@@ -528,6 +576,25 @@
     if (affirmed(/prestazione occasionale|ritenuta d.acconto|collaborazione occasionale/i, body)) add(1, 'giallo', 'Prestazione occasionale o con ritenuta d\'acconto');
     if ((/stage|tirocinio|internship/i.test(info.title || '') || /INTERN/.test(empType)) && !salary) add(1, 'giallo', 'Stage o tirocinio senza rimborso indicato');
     if (body && body.replace(/\s+/g, ' ').length < 400) add(1, 'giallo', 'Descrizione molto scarna');
+
+    // --- Fascia di stipendio senza senso (es. 500 – 25.000 €) ---
+    const range = salaryRange(ld, header + '\n' + body.slice(0, 4000));
+    if (range && range.min > 0 && range.max / range.min >= 3) {
+      add(1, 'giallo', `Fascia di stipendio troppo larga (${range.min.toLocaleString('it-IT')} – ${range.max.toLocaleString('it-IT')} €): non dice quanto pagano davvero`);
+    }
+
+    // --- Junior o stage che chiede anni di esperienza ---
+    const tb = (info.title || '') + '\n' + header;
+    const yrs = body.match(/(almeno|minimo|non meno di|esperienza (di|pregressa di|almeno))\s+(\d+)\s+ann/i) || body.match(/(\d+)\+?\s+anni di esperienza/i);
+    const nYrs = yrs ? parseInt(yrs[3] || yrs[1], 10) : 0;
+    if (/\b(junior|stage|stagista|tirocini|neolaureat|entry.level|prima esperienza|apprendistat)/i.test(tb) && nYrs >= 2) {
+      add(1, 'giallo', `Si presenta come posizione d'ingresso ma chiede almeno ${nYrs} anni di esperienza: requisiti incoerenti`);
+    }
+
+    // --- "Urgente" ma online da settimane ---
+    if (/\burgent[ei]\b|inserimento immediato|subito disponibil/i.test(tb + body.slice(0, 1500)) && days !== null && days >= 30) {
+      add(1, 'giallo', `Dice "urgente" ma è online da circa ${Math.round(days)} giorni`);
+    }
 
     // --- Segnali di truffa e di annuncio "vetrina" ---
     let scam = asksMoney;
@@ -584,7 +651,7 @@
 
   // --- Esporta / importa: diario, verifiche e stipendi in un file JSON ---
 
-  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('afrev:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:');
+  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('afrev:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:') || k.startsWith('afdup:');
 
   function exportData() {
     chrome.storage.local.get(null, all => {
@@ -615,6 +682,7 @@
       for (const s of newV || []) if (!list.some(x => x.job === s.job)) list.push(s);
       return list.slice(-50);
     }
+    if (key.startsWith('afdup:')) return { first: (oldV.first || '9') <= (newV.first || '9') ? oldV.first : newV.first, keys: [...new Set([...(oldV.keys || []), ...(newV.keys || [])])].slice(-10) };
     if (key.startsWith('afseen:')) return (oldV.first || '9') <= (newV.first || '9') ? oldV : newV; // la prima volta vista
     return (newV.date || '') >= (oldV.date || '') ? newV : oldV; // verifica più recente
   }
@@ -970,6 +1038,9 @@
       return { kind: 'site', name: 'Modulo di Indeed', what: 'La candidatura passa da Indeed, che inoltra il tuo CV all\'azienda.',
         tips: ['Il CV caricato su Indeed è quello che vedono: tienilo aggiornato.'] };
     }
+    if (portal && portal.name === 'Subito') return { kind: 'person', name: 'Messaggio a chi ha pubblicato',
+      what: 'Su Subito la candidatura è un messaggio a chi ha messo l\'annuncio: la legge una persona, non un programma.',
+      tips: ['Scrivi poche righe chiare con disponibilità, esperienza e un recapito; allega il CV se il sito lo permette.'] };
     if (portal && portal.kind === 'agenzia') return { kind: 'site', name: `Banca dati di ${portal.name}`,
       what: 'La candidatura entra nella banca dati dell\'agenzia. Un selezionatore dell\'agenzia cerca tra i candidati per parole chiave e ti propone all\'azienda cliente.',
       tips: ['Tieni il profilo aggiornato: possono chiamarti anche per altre offerte.'] };
@@ -981,6 +1052,9 @@
     'essere avere fare deve devono dovrà sarà saranno verrà verranno ogni tutto tutti tutte molto buona buone buon buono ottima ottime ottimo ottimi forte elevata elevato capacità conoscenza conoscenze esperienza esperienze anni anno almeno preferibilmente gradita gradito graditi requisiti requisito ' +
     'azienda aziende società cliente clienti ricerca ricerchiamo cerchiamo cerca offriamo offre offerta inserimento candidato candidati candidata candidatura figura risorsa ruolo posizione attività lavoro lavorare settore team area ambito ufficio sede zona orario orari contratto tempo livello ccnl ' +
     'annuncio annunci mansioni principali seguenti relative relativo nostro nostra nostri vostro proprio propria possesso completano profilo descrizione info informazioni dettagli luogo data ' +
+    'dell dello degli delle nell nello negli sull qui qua cosa ogni come dove anche ancora presso tramite verso mentre dopo prima sempre molto poco tanto' +
+    ' ideale ideali base richiest richiesta richieste richiesti richiesto preferibile gradit titolo studio candidature candidatura persone persona siano essere stato stata avviso italiana italiano disponibile disponibilita ottim buon' +
+    ' competenze capacita conoscenze abilita volenteros motivat dinamic seri cercasi cerchiamo selezioniamo assumiamo eur euro determinato indeterminato nuove nuovi sulle sugli specifiche esigenze migliorare comunicare ' +
     'the and for with you your our are will have has from that this job role team work years experience skills ability knowledge strong good').split(/\s+/).map(w => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
   const PHRASES = ['pacchetto office', 'power bi', 'patente b', 'problem solving', 'customer care', 'customer service', 'data entry',
     'social media', 'google analytics', 'partita doppia', 'lingua inglese', 'inglese fluente', 'help desk', 'service desk',
@@ -1010,6 +1084,7 @@
       const isAcr = /[A-Z]/.test(w) && (/^[A-Z0-9+#]{2,4}$/.test(w) || /^(?=.*[0-9+#])[A-Z0-9+#]{2,6}$/.test(w));
       const n = norm(w);
       if (!isAcr && (n.length < 4 || STOP.has(n))) continue;
+      if (isAcr && (STOP.has(n) || /^(QUI|PER|NON|CHI|CON|DEL|DAL|SUL|NEL|THE|AND|EUR|IVA|SRL|SPA|CV)$/.test(w))) continue;
       if (found.some(p => norm(p).split(' ').includes(n))) continue;
       const k = isAcr ? w : n;
       if (!counts.has(k)) { order.push(k); shown.set(k, isAcr ? w : w.toLowerCase()); }
@@ -1192,6 +1267,8 @@
     if (app && (app.kind === 'ats' || app.kind === 'site')) {
       level = ko.length ? 'rosso' : 'giallo';
       label = ko.length ? 'Filtro attivo, con requisiti che possono escluderti' : 'Filtro attivo: ordina i candidati per parole chiave';
+    } else if (app && app.kind === 'person') {
+      level = 'grigio'; label = 'Nessun filtro automatico: la candidatura arriva a una persona';
     } else if (ko.length) {
       level = 'giallo'; label = 'Programma non riconosciuto, ma l\'annuncio ha requisiti di esclusione';
     } else {
@@ -1221,7 +1298,7 @@
     const txt = el('div', '');
     txt.appendChild(el('b', '', 'Filtro ATS: '));
     txt.appendChild(document.createTextNode(f.label));
-    if (f.kw.length) txt.appendChild(el('div', 'color:#555', 'Cerca probabilmente: ' + f.kw.join(', ')));
+    if (f.kw.length) txt.appendChild(el('div', 'color:#555', (f.level === 'grigio' ? 'Parole importanti dell\'annuncio: ' : 'Cerca probabilmente: ') + f.kw.join(', ')));
     if (f.ko.length) txt.appendChild(el('div', 'color:#555', 'Può escluderti se manca: ' + f.ko.map(k => '«' + k + '»').join(' · ')));
     row.appendChild(txt);
     panel.appendChild(row);
@@ -1296,6 +1373,12 @@
     const check = (await store.get(siteKey(key))) || null;
     const salaries = await recordSalary(title, company, site, result.salary, key);
     const seen = await recordSeen(key);
+    // Stessa azienda e stesso titolo, ma indirizzo diverso: lo stesso annuncio ripubblicato
+    const dupK = 'afdup:' + normCompany(company) + '|' + normTitle(title);
+    const today0 = new Date().toISOString().slice(0, 10);
+    let dup = await store.get(dupK);
+    if (!dup) { dup = { first: today0, keys: [key] }; await store.set(dupK, dup); }
+    else if (!dup.keys.includes(key)) { dup.keys = dup.keys.concat(key).slice(-10); await store.set(dupK, dup); }
 
     let score = result.score;
     const reasons = result.reasons.slice();
@@ -1315,6 +1398,11 @@
     if (seenDays >= 7 && result.days !== null && result.days !== undefined && result.days < seenDays - 2) {
       score += 2;
       reasons.push(['rosso', `L'hai già visto il ${seen.first.split('-').reverse().join('/')}: la data di pubblicazione è stata rinnovata`]);
+    }
+    const dupDays = Math.floor((Date.now() - Date.parse(dup.first)) / 86400000);
+    if (!/non (indicata|riconosciuta)/i.test(company) && dup.keys.length > 1 && dup.keys[0] !== key && dupDays >= 7) {
+      score += 2;
+      reasons.push(['rosso', `Lo stesso annuncio (stessa azienda e titolo) l'hai già visto il ${dup.first.split('-').reverse().join('/')} a un altro indirizzo: è stato ripubblicato`]);
     }
     if (check && check.result === 'notfound') {
       score += 2;
