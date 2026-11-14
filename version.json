@@ -1,21 +1,22 @@
 {
-  "version": "2.4.0",
-  "chrome": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.4.0-chrome-brave-edge.zip",
-  "firefox": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.4.0-firefox.zip",
+  "version": "2.5.0",
+  "chrome": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.5.0-chrome-brave-edge.zip",
+  "firefox": "https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.5.0-firefox.zip",
   "notes": [
-    "Aggiornamento automatico: il pulsante Aggiorna scarica i file nuovi, ne controlla l'integrità e sovrascrive da solo la cartella Download/ann",
-    "Requisito, una volta sola: l'estensione va caricata dalla cartella Download/annunci-fantasma (un'estensione può scrivere solo dentro Downloa",
-    "Se qualcosa va storto resta il vecchio metodo: pulsante \"Scarica lo zip\"."
+    "Stipendio non indicato: da +1 a +2.",
+    "Solo provvigioni o \"guadagni illimitati\": +3",
+    "Intermediario poco conosciuto \"per un'azienda cliente\": +2.",
+    "Mansioni vaghe: +1; con colloquio di gruppo o \"carriera rapida\": altri +2."
   ],
   "base_chrome": "https://raw.githubusercontent.com/Dmitrij-Anatolievic/annunci-fantasma/main/download/chrome/",
   "files_chrome": [
     {
       "path": "background.js",
-      "sha256": "957afe99fc040713708cf2f26a301442f50d9bc123df8cc98f1d7d0d1561e70a"
+      "sha256": "584072f51a03801f688f53af5f5e124d716a1ed8066e8af00e46db25b8a19caa"
     },
     {
       "path": "content.js",
-      "sha256": "38a305379bf5468597ad4abee029eaa4e9ca3b07b8e6a2f8a0ec84039d5bf791"
+      "sha256": "2a1ae9a41596e5ecc00ad25be4ba1fba9e98f7e971208b187e00b962cf754eb2"
     },
     {
       "path": "icons/icon128.png",
@@ -35,18 +36,18 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "8d4eef3032708749888c87901fb66503546c5fc3f728354c8f593e9601da385a"
+      "sha256": "2dcc487bf38beadb20ee70080f2d213a7da3e7bc98a7532e8c3e3b0dedd4e74e"
     }
   ],
   "base_firefox": "https://raw.githubusercontent.com/Dmitrij-Anatolievic/annunci-fantasma/main/download/firefox/",
   "files_firefox": [
     {
       "path": "background.js",
-      "sha256": "957afe99fc040713708cf2f26a301442f50d9bc123df8cc98f1d7d0d1561e70a"
+      "sha256": "584072f51a03801f688f53af5f5e124d716a1ed8066e8af00e46db25b8a19caa"
     },
     {
       "path": "content.js",
-      "sha256": "38a305379bf5468597ad4abee029eaa4e9ca3b07b8e6a2f8a0ec84039d5bf791"
+      "sha256": "2a1ae9a41596e5ecc00ad25be4ba1fba9e98f7e971208b187e00b962cf754eb2"
     },
     {
       "path": "icons/icon128.png",
@@ -66,7 +67,7 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "143c041be00da0c7724a775e79adfd0571a4ad514f293ab2461b73a19ed3c373"
+      "sha256": "94080e4ec7d6714d642e87f3704b5f99bbe67efa02503dde0707f40f61012a41"
     }
   ]
 }

@@ -448,6 +448,26 @@
   const UNPAID_RE = /(giornat\w+ di prova|periodo di prova|settiman\w+ di prova|\bprova)[^.\n]{0,30}(non retribuit\w+|gratuit\w+|senza (compenso|retribuzione))|(formazione|affiancamento|stage|tirocinio)[^.\n]{0,30}non retribuit\w+|solo rimborso spese|a titolo gratuito|non (è )?(previst[ao]|prevede) (alcun[ao]? )?(retribuzione|compenso)/i;
   const EVERGREEN_RE = /siamo sempre alla ricerca|sempre alla ricerca di (nuov|talent|figur|person|profil)|(per|in vista di) (eventuali )?futur[ei] (opportunit|selezion|necessit|esigenz|apertur|inseriment)|eventuali future|talent pool|bacino di candidat|banca dati (di )?(cv|curricul|candidat)|non (abbiamo|ci sono) posizioni aperte/i;
 
+  // Soldi chiesti al candidato: STOP
+  const ASKS_MONEY_RE = /(corso|kit|materiale|formazione|divisa|attrezzatura|patentino|tesserino)\s+([^\s.,;]+\s+){0,2}a (tuo )?(pagamento|carico tuo|tue spese|carico del candidato)|quota (di )?(iscrizione|associativa|d.ingresso|di partecipazione)|investimento iniziale|(versare|versamento di|anticipare|pagare)\s+(una |un |la |il )?(cauzione|deposito|quota|anticipo)|(acquist\w+|compr\w+)\s+(il |un |del )?(kit|pacchetto|starter)/i;
+  // Documenti che servono a rubare l'identità o i soldi (il solo codice fiscale no: si chiede anche per una proposta vera)
+  const DOCS_STOP_RE = /(invi\w+|mand\w+|alleg\w+|forni\w+|trasmett\w+)[^.\n]{0,60}(documento d.identit[aà]|carta d.identit[aà]|\biban\b|coordinate bancarie|tessera sanitaria|estremi (del conto|bancari)|foto (del|della) (documento|carta))/i;
+  // Lavoro vero non pagato: STOP (tirocini e volontariato esclusi: hanno regole proprie)
+  const UNPAID_STOP_RE = /(giornat\w+ di prova|periodo di prova|settiman\w+ di prova|\bprova)[^.\n]{0,30}(non (retribuit|pagat)\w*|gratuit\w+|senza (compenso|retribuzione|paga))|(formazione|affiancamento)[^.\n]{0,30}non (retribuit|pagat)\w*|non (è )?(previst[ao]|prevede) (alcun[ao]? )?(retribuzione|compenso)/i;
+  const UNPAID_SOFT_RE = /a titolo gratuito|solo rimborso spese/i;
+  // Provvigioni: solo provvigione = niente stipendio sicuro
+  const PROV_ONLY_RE = /(solo|esclusivamente|unicamente)\s+(a\s+)?(provvigion|commission)|provvigion\w*\s+pur\w*|(nessun|senza)\s+(fisso|minimo garantito)|guadagni\s+(illimitati|senza limiti)|ti (fai|costruisci) (tu )?lo stipendio|solo a commissione/i;
+  const PROV_RE = /\bprovvigion|\bcommission[ei]\b|guadagni\s+fino a/i;
+  const FIXED_RE = /\bfisso\b|\bfissa\b|minimo garantito|base fissa|retribuzione fissa/i;
+  // Mansioni tipiche da dipendente (per la partita IVA mascherata)
+  const EMPLOYEE_JOB_RE = /magazzin|cameri[ea]r|barist|banconist|pulizi|addett[oaie]|operai|operator[ei]? (telefonic|call)|call.?center|commess[oaie]|aiuto cuoc|lavapiatti|facchin|autist|corrier|rider|fattorin|cassier|receptionist|impiegat|segretari|badant|colf|muratore|manoval/i;
+  // Agenzie per il lavoro conosciute: annunci regolari, l'azienda finale la dicono loro
+  const KNOWN_AGENCY_RE = /\b(randstad|adecco|manpower|gi ?group|umana|openjobmetis|synergie|temporary|etjca|lavoropi[uù]|orienta|kelly|hays|michael page|page personnel|staffing|maw|during|tempor|ali spa|in job|quanta|e-?work|start people|men at work|articolo 1|sapiens|work ?express|jobtech|technical ?hr|osm)\b/i;
+  // Mansioni vaghe e schema "colloquio di gruppo"
+  const VAGUE_TASKS_RE = /varie mansioni|mansioni varie|ruolo dinamico|figur\w+ (dinamic|motivat|ambizios)\w*|ambiente giovane e dinamico|non (è )?richiesta (alcuna )?esperienza[^.\n]{0,40}(crescita|carriera)|anche senza esperienza[^.\n]{0,40}(crescita|carriera|guadagn)/i;
+  const TASK_LIST_RE = /(mansioni|attivit[aà]|compiti|responsabilit[aà])( principali)?\s*:|si occuper[aà] di|dovr[aà] (occuparsi|gestire|preparare|caricare|pulire|servire)/i;
+  const GROUP_RE = /colloqui\w* di gruppo|selezion\w* \d+ (figure|risorse|persone|candidati|ragazz)|(nuova|nuove) apertur\w+|(crescita|carriera) (rapida|veloce|garantita)|opportunit[aà] di (carriera|crescita|guadagno)/i;
+
   function salaryRange(ld, text) {
     const v = ld && ld.baseSalary && (ld.baseSalary.value || ld.baseSalary);
     if (v && v.minValue && v.maxValue) return { min: +v.minValue, max: +v.maxValue };
@@ -469,7 +489,7 @@
       if (v.minValue && v.maxValue && v.minValue !== v.maxValue) return `${v.minValue}–${v.maxValue} ${eur} ${unit}`.trim();
       if (v.minValue || v.maxValue || v.value) return `${v.value || v.minValue || v.maxValue} ${eur} ${unit}`.trim();
     }
-    const src = (info.header || info.body.slice(0, 4000)).replace(/[^\n]*Premium[^\n]*/gi, '');
+    const src = ((info.header || '') + '\n' + (info.body || '').slice(0, 4000)).replace(/[^\n]*Premium[^\n]*/gi, '');
     const m = src.match(/[^\n·|]*(\d[\d.,]*\s?[Kk]?\s?(€|EUR)|(€|EUR)\s?\d)[^\n·|]*/);
     return m ? m[0].trim().slice(0, 80) : '';
   }
@@ -541,11 +561,12 @@
     }
 
     // --- Retribuzione ---
-    const asksMoney = /(corso|kit|materiale|formazione)\s+a pagamento|quota (di )?iscrizione|investimento iniziale/i.test(body);
-    const salary = !asksMoney && ((ld && ld.baseSalary) || SALARY_RE.test(header || body.slice(0, 4000)));
+    const asksMoney = affirmed(ASKS_MONEY_RE, body);
+    const salary = !asksMoney && ((ld && ld.baseSalary) || SALARY_RE.test(header + '\n' + body.slice(0, 4000)));
     const vague = body.match(VAGUE_PAY_RE);
     if (salary) add(0, 'verde', 'Retribuzione indicata');
-    else add(1, 'giallo', 'Retribuzione non indicata' + (vague ? `, solo una formula vaga («${vague[0]}»)` : '') +
+    else if (asksMoney) { /* lo stipendio promesso non conta: ti chiedono soldi (STOP più sotto) */ }
+    else add(2, 'giallo', 'Retribuzione non indicata' + (vague ? `, solo una formula vaga («${vague[0]}»)` : '') +
       ': dal 7 giugno 2026 gli annunci devono riportare stipendio o fascia (D.Lgs. 96/2026)');
     if (/\bC\.?C\.?N\.?L\b|contratto collettivo/i.test(header + '\n' + body)) add(0, 'verde', 'Contratto collettivo (CCNL) indicato');
 
@@ -559,23 +580,34 @@
 
     // --- Chi pubblica: agenzia o società di selezione al posto dell'azienda finale ---
     const ci = info.companyInfo || {};
-    const agency = ci.agencySite || /agenzia per il lavoro|\bapl\b|lavoro temporaneo|staffing|recruit(ing|ment)|selezione del personale|head ?hunt|executive search/i.test(info.company || '') ||
+    const knownAgency = !!(ci.agencySite || KNOWN_AGENCY_RE.test(info.company || '') || /agenzia per il lavoro|\bapl\b|lavoro temporaneo|somministrazione/i.test(info.company || ''));
+    const middleman = !knownAgency && (/staffing|recruit(ing|ment)|selezione del personale|head ?hunt|executive search/i.test(info.company || '') ||
       (ci.sector && /risorse umane|staffing|recruit|selezione|human resources/i.test(ci.sector)) ||
-      /per (importante|primaria|nota) (azienda|società) cliente|per (conto di|una) (azienda|società) cliente|nostr[oa] client[ei]|our client/i.test(body);
-    if (agency) add(1, 'giallo', 'Pubblicato da un\'agenzia o società di selezione: l\'azienda finale non è indicata');
+      /per (importante|primaria|nota) (azienda|società) cliente|per (conto di|una) (azienda|società) cliente|nostr[oa] client[ei]|our client/i.test(body));
+    const agency = knownAgency || middleman;
+    if (knownAgency) add(0, 'grigio', 'Agenzia per il lavoro: il nome dell\'azienda dove lavorerai chiedilo a loro prima del colloquio');
+    else if (middleman) add(2, 'giallo', 'Intermediario poco conosciuto che lavora "per un\'azienda cliente" senza dire quale: chiedi il nome prima di andare al colloquio');
 
     // --- Condizioni poco serie, nel testo dell'annuncio ---
     // employmentType "CONTRACTOR" non si usa: Randstad lo mette anche su contratti a tempo determinato
     const empType = ld && ld.employmentType ? [].concat(ld.employmentType).join(' ').toUpperCase() : '';
     const freelance = affirmed(AUTONOMO_RE, info.title || '') || affirmed(AUTONOMO_RE, body);
     if (info.companyInfo && info.companyInfo.privateUser) add(1, 'giallo', 'Pubblicato da un privato, non da un\'azienda: prima del colloquio chiedi nome dell\'azienda e partita IVA del datore di lavoro');
-    if (affirmed(PIVA_RE, header + '\n' + body)) add(2, 'rosso', 'Partita IVA richiesta o tra le forme di contratto');
-    else if (freelance) add(2, 'rosso', 'Lavoro autonomo (libera professione): di solito serve la partita IVA, non è da dipendente');
-    if (affirmed(/\bprovvigion|guadagni\s+(illimitati|fino a)|solo a commissione/i, body)) add(2, 'rosso', 'Compenso a provvigione o "guadagni illimitati"');
-    if (asksMoney) add(3, 'rosso', 'Ti chiedono di pagare qualcosa');
+    const employeeJob = EMPLOYEE_JOB_RE.test(info.title || '');
+    if (affirmed(PIVA_RE, header + '\n' + body)) {
+      if (employeeJob) add(3, 'rosso', 'Partita IVA per un lavoro da dipendente: è lavoro autonomo finto, paghi tu contributi e spese');
+      else add(2, 'rosso', 'Partita IVA richiesta o tra le forme di contratto');
+    } else if (freelance) add(employeeJob ? 3 : 2, 'rosso', 'Lavoro autonomo (libera professione): di solito serve la partita IVA, non è da dipendente');
+    if (affirmed(PROV_ONLY_RE, body)) add(3, 'rosso', 'Solo provvigioni, nessuno stipendio sicuro: se non vendi non guadagni');
+    else if (affirmed(PROV_RE, body)) {
+      if (FIXED_RE.test(body)) add(0, 'grigio', 'Fisso più provvigioni: chiedi quanto è il fisso e mettilo per iscritto');
+      else add(1, 'giallo', 'Parla di provvigioni ma non di uno stipendio fisso: chiedi se il fisso c\'è');
+    }
     if (affirmed(/prestazione occasionale|ritenuta d.acconto|collaborazione occasionale/i, body)) add(1, 'giallo', 'Prestazione occasionale o con ritenuta d\'acconto');
     if ((/stage|tirocinio|internship/i.test(info.title || '') || /INTERN/.test(empType)) && !salary) add(1, 'giallo', 'Stage o tirocinio senza rimborso indicato');
-    if (body && body.replace(/\s+/g, ' ').length < 400) add(1, 'giallo', 'Descrizione molto scarna');
+    const vagueTasks = affirmed(VAGUE_TASKS_RE, (info.title || '') + '\n' + body) && !TASK_LIST_RE.test(body);
+    if (vagueTasks) add(1, 'giallo', 'Mansioni vaghe: non dice cosa farai davvero');
+    if (vagueTasks && GROUP_RE.test((info.title || '') + '\n' + body)) add(2, 'rosso', 'Colloquio di gruppo o "carriera rapida" senza mansioni chiare: è lo schema tipico della vendita porta a porta a provvigione');
 
     // --- Fascia di stipendio senza senso (es. 500 – 25.000 €) ---
     const range = salaryRange(ld, header + '\n' + body.slice(0, 4000));
@@ -597,20 +629,33 @@
     }
 
     // --- Segnali di truffa e di annuncio "vetrina" ---
-    let scam = asksMoney;
-    if (affirmed(EASY_RE, (info.title || '') + '\n' + body)) { scam = true; add(2, 'rosso', 'Promette guadagni facili o pagati "a compito": è lo schema tipico delle truffe del lavoro online'); }
-    if (affirmed(DOCS_RE, body)) { scam = true; add(2, 'rosso', 'Chiede documenti o dati bancari già nell\'annuncio: non inviarli mai prima di un contratto'); }
-    if (CHAT_RE.test(body)) add(1, 'giallo', 'Ti fa passare su WhatsApp o Telegram: succede con piccole attività, ma è anche il canale preferito dei finti selezionatori');
+    // STOP: un solo segnale basta per dire "non candidarti"
+    const stop = [];
+    const stopIf = (cond, text) => { if (cond) { stop.push(text); add(4, 'rosso', 'STOP · ' + text); } };
+    stopIf(asksMoney, 'Ti chiedono soldi (corso, kit, divisa, quota o deposito): chi assume paga te, non il contrario');
+    stopIf(affirmed(EASY_RE, (info.title || '') + '\n' + body), 'Promette guadagni facili o pagati "a compito": è lo schema tipico delle truffe del lavoro online');
+    stopIf(affirmed(DOCS_STOP_RE, body), 'Chiede documento d\'identità o IBAN già nell\'annuncio: non inviarli prima di un colloquio e di un contratto');
+    stopIf(affirmed(UNPAID_STOP_RE, body) && !/stage|tirocini|internship|volontari/i.test(info.title || ''), 'Prova o formazione di lavoro non pagata: il lavoro, anche di prova, si paga');
+    if (!stop.length && affirmed(DOCS_RE, body)) add(1, 'giallo', 'Chiede dati personali (es. codice fiscale) già nell\'annuncio: dalli solo dopo il colloquio');
+    if (affirmed(UNPAID_SOFT_RE, body) && !/stage|tirocini|internship/i.test(info.title || '')) add(2, 'rosso', 'Lavoro gratuito o pagato solo a rimborso spese');
+    const scam = stop.length > 0;
+    const named = !/^(azienda )?(non indicata|non riconosciuta|riservat[ao]|confidenziale|anonima)$/i.test((info.company || '').trim()) && (info.company || '').trim().length > 1;
+    if (CHAT_RE.test(body)) {
+      if (named) add(0, 'grigio', 'Contatto su WhatsApp o Telegram: normale per piccole attività, ma verifica che l\'azienda esista');
+      else add(1, 'giallo', 'Contatto su WhatsApp o Telegram e nessun nome di azienda: è il canale preferito dei finti selezionatori');
+    }
     const mail = body.match(FREE_MAIL_RE);
-    if (mail && !ci.privateUser) add(1, 'giallo', `Candidatura a un indirizzo email personale (@${mail[1]}): un'azienda di solito usa il proprio dominio`);
-    if (affirmed(UNPAID_RE, body)) add(2, 'rosso', 'Prova o periodo di lavoro non pagato');
+    if (mail && !ci.privateUser) {
+      if (named) add(0, 'grigio', `Candidatura a un indirizzo email personale (@${mail[1]}): normale per piccole attività`);
+      else add(1, 'giallo', `Candidatura a un indirizzo email personale (@${mail[1]}) e nessun nome di azienda`);
+    }
     if (affirmed(EVERGREEN_RE, body)) add(2, 'rosso', 'Non sembra una posizione aperta adesso: raccolgono curriculum per il futuro');
     if (!agency && !ci.privateUser && /^azienda (non indicata|riservata|confidenziale|anonima)$|^(riservat[ao]|confidenziale)$/i.test((info.company || '').trim())) {
       add(1, 'giallo', 'Non risulta chi pubblica l\'annuncio. Gli annunci anonimi sono vietati (art. 9 D.Lgs. 276/2003): chiedi il nome dell\'azienda prima di mandare il CV');
     }
 
     score = Math.max(0, score);
-    return { score, reasons, salary: salary ? salaryText(info, ld) : '', days, scam };
+    return { score, reasons, salary: salary ? salaryText(info, ld) : '', days, scam, stop };
   }
 
   // ======================================================================
@@ -651,7 +696,7 @@
 
   // --- Esporta / importa: diario, verifiche e stipendi in un file JSON ---
 
-  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('afrev:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:') || k.startsWith('afdup:');
+  const isOurKey = k => k === 'afcv' || k.startsWith('afreg:') || k.startsWith('afrev:') || k.startsWith('af:') || k.startsWith('afjob:') || k.startsWith('afsal:') || k.startsWith('afseen:') || k.startsWith('afdup:') || k.startsWith('afstopok:');
 
   function exportData() {
     chrome.storage.local.get(null, all => {
@@ -1450,15 +1495,18 @@
       reasons.push(['verde', `Presente sul sito dell'azienda (verificato il ${check.date})`]);
     }
 
-    const level = score >= 4 ? ['rosso', 'Rischio alto'] : score >= 2 ? ['giallo', 'Rischio medio'] : ['verde', 'Rischio basso'];
-    try { chrome.runtime.sendMessage({ type: 'af-score', score, color: COLORS[level[0]] }); } catch (e) { /* estensione ricaricata: ignora */ }
+    const stops = result.stop || [];
+    const stopKey = 'afstopok:' + key;
+    const stopOk = stops.length ? !!(await store.get(stopKey)) : false;
+    const level = stops.length ? ['rosso', 'STOP · Non candidarti'] : score >= 4 ? ['rosso', 'Rischio alto'] : score >= 2 ? ['giallo', 'Rischio medio'] : ['verde', 'Rischio basso'];
+    try { chrome.runtime.sendMessage({ type: 'af-score', score: stops.length ? 'STOP' : score, color: COLORS[level[0]] }); } catch (e) { /* estensione ricaricata: ignora */ }
     store.set('aflast', { title, company, site, score, level: level[0], label: level[1], time: Date.now() });
 
     // Intestazione
     const head = el('div', 'display:flex;align-items:center;justify-content:space-between');
     const h = el('div', 'display:flex;align-items:center;font-weight:600');
     h.appendChild(el('span', `display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;background:${COLORS[level[0]]}`));
-    h.appendChild(el('span', '', `${level[1]} (punteggio ${score})`));
+    h.appendChild(el('span', '', stops.length ? level[1] : `${level[1]} (punteggio ${score})`));
     const right = el('div', 'display:flex;align-items:center');
     const toggle = el('button', 'border:none;background:none;cursor:pointer;font-size:16px;color:#666', minimized ? '▴' : '▾');
     toggle.title = minimized ? 'Espandi' : 'Riduci';
@@ -1476,6 +1524,22 @@
     head.appendChild(right);
     panel.appendChild(head);
     if (minimized) return;
+
+    // STOP: un muro rosso, finché non scegli di guardare comunque
+    if (stops.length && !stopOk) {
+      const box = el('div', 'margin:8px 0;padding:8px 10px;border-radius:8px;background:#c62828;color:#fff');
+      box.appendChild(el('div', 'font-weight:700;font-size:15px;margin-bottom:4px', 'Non candidarti'));
+      for (const t of stops) box.appendChild(el('div', 'margin:3px 0', '• ' + t));
+      box.appendChild(el('div', 'margin-top:6px;font-size:12px;opacity:.9', 'Basta un segnale come questo: è così che lavorano le truffe. Non mandare soldi, documenti o giornate di lavoro gratis.'));
+      panel.appendChild(box);
+      panel.appendChild(el('div', 'color:#666;margin:2px 0 6px', `${company} · ${site}`));
+      panel.appendChild(button('Segnala alla Polizia Postale', () => open('https://www.commissariatodips.it/'), 'Apre il sito del Commissariato di P.S. online, dove si segnalano le truffe'));
+      panel.appendChild(button('Mostramelo comunque', async () => { await store.set(stopKey, Date.now()); again(); },
+        'Se pensi che sia un falso allarme: vedi tutta l\'analisi di questo annuncio'));
+      return;
+    }
+    if (stops.length) panel.appendChild(el('div', 'margin:6px 0;padding:5px 7px;border-radius:6px;font-size:12px;background:#fdecea;color:#b71c1c',
+      'Hai scelto di vedere comunque questo annuncio: i segnali STOP restano qui sotto.'));
     const upd = await ask({ type: 'af-check-update' });
     if (upd && upd.available) {
       const b = el('div', 'margin:6px 0;padding:5px 7px;border-radius:6px;font-size:12px;background:#e8f0fe', `È disponibile la versione ${upd.latest}. `);

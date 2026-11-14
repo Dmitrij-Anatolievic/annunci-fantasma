@@ -72,6 +72,17 @@ function dataUrl(buf, path) {
   return 'data:' + type + ';base64,' + btoa(bin);
 }
 
+const BLOCKING_DANGER = ['file', 'url', 'content', 'uncommon', 'host', 'unwanted', 'promptForScanning', 'promptForLocalPasswordScanning', 'passwordProtected', 'blockedTooLarge', 'blockedScanFailed', 'sensitiveContentBlock', 'deepScannedOpenedDangerous', 'accountCompromise'];
+
+// Un aggiornamento automatico non può dare all'estensione permessi nuovi: quelli vanno accettati a mano
+function newPermissions(nextManifest) {
+  const cur = chrome.runtime.getManifest();
+  const list = m => [].concat(m.permissions || [], m.host_permissions || [], m.optional_permissions || [],
+    ...(m.content_scripts || []).map(c => c.matches || []));
+  const have = new Set(list(cur));
+  return list(nextManifest).filter(p => !have.has(p));
+}
+
 // Aspetta la fine di uno scaricamento; segnala se il browser lo trattiene come "pericoloso"
 function waitDownload(id) {
   return new Promise(resolve => {
@@ -81,7 +92,8 @@ function waitDownload(id) {
       if (!it) return;
       if (it.state === 'complete') finish({ ok: true, filename: it.filename });
       else if (it.state === 'interrupted') finish({ ok: false, reason: it.error || 'interrotto', filename: it.filename });
-      else if (it.danger && !['safe', 'accepted'].includes(it.danger)) finish({ ok: false, danger: true, filename: it.filename });
+      // Solo gli stati che aspettano una decisione dell'utente sono un blocco; le scansioni in corso si aspettano
+      else if (BLOCKING_DANGER.includes(it.danger)) finish({ ok: false, danger: true, filename: it.filename });
     });
     const on = d => { if (d.id === id) check(); };
     chrome.downloads.onChanged.addListener(on);
@@ -106,6 +118,12 @@ async function installUpdate(tabId) {
     if (hex(await crypto.subtle.digest('SHA-256', buf)) !== f.sha256)
       return { ok: false, error: 'GitHub sta ancora pubblicando la nuova versione. Riprova tra qualche minuto.' };
     got.push({ path: f.path, buf });
+  }
+  const man = got.find(f => f.path === 'manifest.json');
+  if (man) {
+    let added = [];
+    try { added = newPermissions(JSON.parse(new TextDecoder().decode(man.buf))); } catch (e) { return { ok: false, error: 'Il manifest della nuova versione non è leggibile.' }; }
+    if (added.length) return { ok: false, error: 'La nuova versione chiede permessi nuovi (' + added.join(', ') + '): per sicurezza va installata a mano con lo zip' };
   }
   // 2) Scrive i file nella cartella Download/annunci-fantasma; manifest per ultimo
   got.sort((a, b) => (a.path === 'manifest.json') - (b.path === 'manifest.json'));
@@ -178,7 +196,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   }
   chrome.action.setBadgeText({ tabId, text: String(msg.score) });
   chrome.action.setBadgeBackgroundColor({ tabId, color: msg.color || '#9e9e9e' });
-  chrome.action.setTitle({ tabId, title: msg.score === '' ? 'Annunci Fantasma: analizza questo annuncio' : `Annunci Fantasma: punteggio di rischio ${msg.score}` });
+  chrome.action.setTitle({ tabId, title: msg.score === '' ? 'Annunci Fantasma: analizza questo annuncio' : msg.score === 'STOP' ? 'Annunci Fantasma: STOP, non candidarti' : `Annunci Fantasma: punteggio di rischio ${msg.score}` });
 });
 
 // Cambiando pagina il badge della scheda si azzera

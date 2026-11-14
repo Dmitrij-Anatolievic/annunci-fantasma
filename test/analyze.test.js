@@ -259,7 +259,7 @@ test('Truffa "a compito": guadagni facili mettendo like → scam', () => {
 
 test('Documenti e IBAN chiesti nell\'annuncio → scam', () => {
   const r = analyze({ title: 'Addetto', header: '', body: long + ' Inviare copia del documento d\'identità e IBAN per la registrazione.' }, null);
-  assert(r.scam === true && has(r, 'documenti'));
+  assert(r.scam === true && r.stop.length === 1 && has(r, 'STOP · Chiede documento'));
 });
 
 test('WhatsApp: segnale giallo, non truffa da solo', () => {
@@ -279,7 +279,7 @@ test('"Formazione gratuita" è un vantaggio, non lavoro non pagato', () => {
 
 test('"Giornata di prova non retribuita" → segnale rosso', () => {
   const r = analyze({ title: 'Barista', header: '', body: long + ' Prevista giornata di prova non retribuita.' }, null);
-  assert(has(r, 'non pagato'));
+  assert(r.stop.length === 1 && has(r, 'non pagata') && r.score >= 4);
 });
 
 test('Annuncio vetrina: "per future selezioni" → segnale', () => {
@@ -363,7 +363,7 @@ test('"Urgente" ma online da 40 giorni', () => {
 
 test('"Valori spa Agenzia per il lavoro" riconosciuta come agenzia', () => {
   const r = analyze({ title: 'Farmacista', company: 'Valori spa Agenzia per il lavoro', header: '', body: long }, null);
-  assert(has(r, 'agenzia'));
+  assert(has(r, 'Agenzia per il lavoro'));
 });
 
 test('Parole chiave: niente "dell", "QUI", "candidature", "ideale"', () => {
@@ -373,8 +373,8 @@ test('Parole chiave: niente "dell", "QUI", "candidature", "ideale"', () => {
 
 test('Truffa: provvigioni e corso a pagamento', () => {
   const r = analyze({ header: '', body: 'Guadagni illimitati! Corso a pagamento di 200 euro. Lavoro a provvigione.' }, null);
-  assert(has(r, 'Ti chiedono di pagare'));
-  assert(has(r, 'provvigione'));
+  assert(has(r, 'STOP · Ti chiedono soldi'));
+  assert(has(r, 'Solo provvigioni'));
   assert(!has(r, 'Retribuzione indicata'));
   assert(r.score >= 4);
 });
@@ -423,7 +423,7 @@ test('LinkedIn: "6 giorni fa" senza prefisso viene letto', () => {
 
 test('Agenzia di selezione segnalata', () => {
   const r = analyze({ header: 'Titolo\n2 giorni fa\n30.000 € all\'anno', body: long, companyInfo: { sector: 'Servizi risorse umane' } }, null);
-  assert(has(r, 'agenzia'));
+  assert(has(r, 'Intermediario poco conosciuto') && r.score === 2, r.score);
 });
 
 test('Annuncio che non accetta più candidature', () => {
@@ -444,6 +444,70 @@ test('Subito: data "12 set alle" = vecchio', () => {
 test('Stipendio estratto dal testo', () => {
   const r = analyze({ header: 'Titolo\nPubblicata 2 giorni fa\n24K € /yr - 30K € yr', body: long }, null);
   assert(r.salary.includes('24K'), r.salary);
+});
+
+// ---------------- 2.5.0: regole "severe" decise dal tavolo a tre (Marco) ----------------
+test('Bug corretto: stipendio scritto solo nel corpo viene visto anche se c\'è un\'intestazione', () => {
+  const r = analyze({ title: 'Impiegato', header: 'Impiegato\nNapoli · 3 giorni fa', body: long + ' RAL 28.000 € lordi annui.' }, null);
+  assert(has(r, 'Retribuzione indicata'), JSON.stringify(r.reasons));
+});
+test('Stipendio assente vale +2', () => {
+  const r = analyze({ title: 'Magazziniere', header: 'Titolo\n2 giorni fa', body: long }, null);
+  assert(has(r, 'Retribuzione non indicata') && r.score === 2, r.score);
+});
+test('STOP: kit a pagamento → rosso da solo', () => {
+  const r = analyze({ title: 'Addetto magazzino', header: 'Titolo\n2 giorni fa\n1.300 € al mese', body: long + ' Per iniziare è richiesto l\'acquisto del kit di benvenuto.' }, null);
+  assert(r.stop.length === 1 && r.score >= 4 && r.scam, JSON.stringify(r));
+});
+test('STOP: divisa a carico tuo', () => {
+  const r = analyze({ title: 'Cameriere', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: long + ' La divisa è a carico del candidato.' }, null);
+  assert(r.stop.length === 1, JSON.stringify(r.reasons));
+});
+test('Niente STOP se il corso è "non a pagamento"', () => {
+  const r = analyze({ title: 'Magazziniere', header: 'Titolo\n1 giorno fa\n1.300 € al mese', body: long + ' Nessun corso a pagamento: la formazione è gratuita e retribuita.' }, null);
+  assert(r.stop.length === 0, JSON.stringify(r.reasons));
+});
+test('Solo codice fiscale: giallo, non STOP', () => {
+  const r = analyze({ title: 'Addetto', header: 'Titolo\n1 giorno fa\n1.300 € al mese', body: long + ' Inviare CV e codice fiscale.' }, null);
+  assert(r.stop.length === 0 && has(r, 'codice fiscale'), JSON.stringify(r.reasons));
+});
+test('Tirocinio "a rimborso spese" non è STOP né lavoro gratuito', () => {
+  const r = analyze({ title: 'Tirocinio amministrativo', header: 'Titolo\n1 giorno fa', body: long + ' Tirocinio con solo rimborso spese di 500 euro.' }, null);
+  assert(r.stop.length === 0 && !has(r, 'Lavoro gratuito'), JSON.stringify(r.reasons));
+});
+test('Solo provvigioni +3; fisso + provvigioni 0', () => {
+  const a = analyze({ title: 'Consulente', header: 'Titolo\n1 giorno fa\n1.000 € al mese', body: long + ' Compenso esclusivamente a provvigione.' }, null);
+  const b = analyze({ title: 'Consulente', header: 'Titolo\n1 giorno fa\n1.000 € al mese', body: long + ' Fisso mensile più provvigioni.' }, null);
+  assert(has(a, 'Solo provvigioni') && a.score === 3, a.score);
+  assert(has(b, 'Fisso più provvigioni') && b.score === 0, b.score);
+});
+test('P.IVA per magazziniere +3, per consulente +2', () => {
+  const a = analyze({ title: 'Magazziniere', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: long + ' Richiesta partita IVA.' }, null);
+  const b = analyze({ title: 'Consulente marketing', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: long + ' Richiesta partita IVA.' }, null);
+  assert(a.score === 3 && b.score === 2, a.score + ' ' + b.score);
+});
+test('Agenzia nota (Randstad) vale 0', () => {
+  const r = analyze({ title: 'Operaio', company: 'Randstad Italia', header: 'Titolo\n1 giorno fa\n1.400 € al mese', body: long }, null);
+  assert(r.score === 0 && has(r, 'Agenzia per il lavoro'), JSON.stringify(r.reasons));
+});
+test('Intermediario sconosciuto "per azienda cliente" +2', () => {
+  const r = analyze({ title: 'Operaio', company: 'Xyz Consulting', header: 'Titolo\n1 giorno fa\n1.400 € al mese', body: long + ' Per importante azienda cliente cerchiamo.' }, null);
+  assert(r.score === 2, r.score);
+});
+test('Descrizione breve non penalizzata', () => {
+  const r = analyze({ title: 'Barista', company: 'Bar Roma', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: 'Cercasi barista per bar a Napoli, turni serali.' }, null);
+  assert(r.score === 0, JSON.stringify(r.reasons));
+});
+test('WhatsApp con azienda nominata 0, senza nome +1', () => {
+  const t = long + ' Scrivi su WhatsApp al 333 1234567.';
+  const a = analyze({ title: 'Barista', company: 'Bar Roma', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: t }, null);
+  const b = analyze({ title: 'Barista', company: 'Azienda riservata', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: t }, null);
+  assert(a.score === 0 && b.score >= 1, a.score + ' ' + b.score);
+});
+test('Colloquio di gruppo + mansioni vaghe = +3; da solo 0', () => {
+  const a = analyze({ title: 'Ragazzi motivati', company: 'Alfa srl', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: long + ' Varie mansioni, ambiente giovane e dinamico. Selezioniamo 10 figure per nuova apertura, colloqui di gruppo.' }, null);
+  const b = analyze({ title: 'Magazziniere', company: 'Alfa srl', header: 'Titolo\n1 giorno fa\n1.200 € al mese', body: long + ' Mansioni: carico e scarico. Colloqui di gruppo il lunedì.' }, null);
+  assert(a.score === 3 && b.score === 0, a.score + ' ' + b.score);
 });
 
 console.log(`\n${passed} test superati`);

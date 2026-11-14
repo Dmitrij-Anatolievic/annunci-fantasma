@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.5.0 — 2026-11-14
+
+Plugin più severo, deciso al "tavolo a tre" (Claude, DeepSeek, ChatGPT) mettendosi nei panni di un ragazzo senza soldi, con poche competenze, che trova quasi solo truffe.
+
+**STOP "Non candidarti"**: un solo segnale basta. Soldi chiesti al candidato (corso, kit, divisa, quota, deposito); documento d'identità o IBAN già nell'annuncio; guadagni facili o "a compito"; prova o formazione di lavoro non pagata. Pulsante **Mostramelo comunque** per i falsi allarmi.
+
+**Più severo**
+- Stipendio non indicato: da +1 a +2.
+- Solo provvigioni o "guadagni illimitati": +3. Partita IVA per un lavoro da dipendente (magazzino, cameriere, pulizie, call center…): +3.
+- Intermediario poco conosciuto "per un'azienda cliente": +2.
+- Mansioni vaghe: +1; con colloquio di gruppo o "carriera rapida": altri +2.
+
+**Meno falsi allarmi sui lavori veri**
+- Agenzie per il lavoro conosciute (Randstad, Adecco, Gi Group…): 0, solo una nota.
+- Descrizione breve: 0. WhatsApp o Gmail: 0 se l'azienda è nominata. Fisso più provvigioni: 0. Solo codice fiscale: +1, non STOP. Tirocini a rimborso spese: non penalizzati.
+
+**Errori corretti**
+- Lo stipendio scritto solo nella descrizione non veniva visto se la pagina aveva un'intestazione (trovato da ChatGPT).
+- Aggiornamento: le scansioni antivirus del browser in corso venivano scambiate per un blocco (trovato da ChatGPT). Un aggiornamento automatico che chiede permessi nuovi ora viene rifiutato e va installato a mano.
+
 ## 2.4.0 — 2026-11-13
 
 - Aggiornamento automatico: il pulsante Aggiorna scarica i file nuovi, ne controlla l'integrità e sovrascrive da solo la cartella Download/annunci-fantasma, poi ricarica estensione e pagina. Non serve più estrarre zip.

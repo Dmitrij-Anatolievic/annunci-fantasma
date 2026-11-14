@@ -5,12 +5,12 @@ Su ogni annuncio mostra un **semaforo di rischio** con i motivi, un **diario per
 
 Non è un verdetto: segnala indizi, non accusa nessuno. Legge solo la pagina che stai guardando e non invia dati a nessun server: diario e verifiche restano nel tuo browser (`chrome.storage.local`).
 
-Versione: 2.4.0 (in prova)
+Versione: 2.5.0 (in prova)
 
 ## Scarica
 
-- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.4.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.4.0-chrome-brave-edge.zip)
-- **Firefox**: [annunci-fantasma-2.4.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.4.0-firefox.zip)
+- **Chrome, Brave, Edge, Opera, Vivaldi**: [annunci-fantasma-2.5.0-chrome-brave-edge.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.5.0-chrome-brave-edge.zip)
+- **Firefox**: [annunci-fantasma-2.5.0-firefox.zip](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/raw/main/download/annunci-fantasma-2.5.0-firefox.zip)
 
 Come installarla è spiegato più sotto, in [Installazione](#installazione). Hai trovato un errore? Apri una segnalazione in [Issues](https://github.com/Dmitrij-Anatolievic/annunci-fantasma/issues) con il link dell'annuncio e uno screenshot.
 
@@ -78,13 +78,13 @@ Se l'analisi non parte da sola: **Dettagli** dell'estensione → **Accesso ai si
 
 L'estensione controlla da sola se c'è una versione nuova e lo scrive nella sezione **Aggiornamenti** del riquadro.
 
-**Dalla 2.4.0**: premi **Aggiorna**. L'estensione scarica i file nuovi da GitHub, controlla che siano integri (impronta SHA-256), sovrascrive la cartella `Download/annunci-fantasma`, si ricarica e ricarica la pagina. Diario e dati restano.
+**Dalla 2.5.0**: premi **Aggiorna**. L'estensione scarica i file nuovi da GitHub, controlla che siano integri (impronta SHA-256), sovrascrive la cartella `Download/annunci-fantasma`, si ricarica e ricarica la pagina. Diario e dati restano.
 
 Funziona solo se l'estensione è caricata proprio da quella cartella. Se non lo è, il riquadro lo rileva e spiega come spostarla **una volta sola**: Esporta i dati, Rimuovi l'estensione, Carica estensione non pacchettizzata dalla cartella giusta, Importa i dati.
 
 Se il browser ha l'opzione "Chiedi dove salvare ogni file" attiva, o trattiene un file come potenzialmente pericoloso (Ctrl+J → Mantieni), l'aggiornamento può fermarsi: in quel caso resta il pulsante **Scarica lo zip**, il metodo a mano.
 
-**Da una versione precedente alla 2.4.0** il pulsante scarica ancora lo zip: estrailo in `Download/annunci-fantasma`, poi segui i passi qui sopra (Esporta, Rimuovi, Carica dalla nuova cartella, Importa). È l'ultima volta che serve.
+**Da una versione precedente alla 2.5.0** il pulsante scarica ancora lo zip: estrailo in `Download/annunci-fantasma`, poi segui i passi qui sopra (Esporta, Rimuovi, Carica dalla nuova cartella, Importa). È l'ultima volta che serve.
 
 ## Segnali e punteggio
 
@@ -97,12 +97,14 @@ Se il browser ha l'opzione "Chiedi dove salvare ogni file" attiva, o trattiene u
 | Non accetta più candidature | +3 |
 | Scaduto secondo i dati dell'annuncio ma ancora online | +2 |
 | Più di 100 candidati e aperto da più di 14 giorni | +1 |
-| Retribuzione non indicata (obbligatoria dal 7 giugno 2026, D.Lgs. 96/2026) | +1 |
+| Retribuzione non indicata (obbligatoria dal 7 giugno 2026, D.Lgs. 96/2026) | +2 |
 | Candidatura gestita fuori dal sito | +1 |
 | Contratto di collaborazione invece che da dipendente | +1 |
-| Pubblicato da agenzia o società di selezione (azienda finale non indicata) | +1 |
+| Agenzia per il lavoro conosciuta (Randstad, Adecco, Gi Group…) | 0 (solo nota) |
+| Intermediario poco conosciuto "per un'azienda cliente" senza dire quale | +2 |
 | Stage o tirocinio senza rimborso indicato | +1 |
 | Partita IVA richiesta o tra le forme di contratto | +2 |
+| Partita IVA per un lavoro da dipendente (magazzino, cameriere, pulizie, call center…) | +3 |
 | Lavoro autonomo ("libera professione", "libero professionista") | +2 |
 | L'hai già visto giorni fa e ora la data risulta nuova (annuncio rinfrescato) | +2 |
 | Dichiara almeno 200 dipendenti ma meno del 5% è su LinkedIn | +1 |
@@ -116,18 +118,18 @@ Se il browser ha l'opzione "Chiedi dove salvare ogni file" attiva, o trattiene u
 | Junior, stage o apprendistato che chiede 2 o più anni di esperienza | +1 |
 | "Urgente" ma online da più di 30 giorni | +1 |
 | Scadenza precedente alla pubblicazione (date incoerenti) | +1 |
-| Guadagni facili o lavoretti "a compito" (possibile truffa) | +2 |
-| Documenti o dati bancari chiesti già nell'annuncio (possibile truffa) | +2 |
-| Prova o periodo di lavoro non pagato | +2 |
+| Codice fiscale o altri dati chiesti già nell'annuncio | +1 |
+| Lavoro gratuito o pagato solo a rimborso spese (tirocini esclusi) | +2 |
 | Annuncio "vetrina": raccolgono curriculum per il futuro | +2 |
-| Ti fa passare su WhatsApp o Telegram | +1 |
-| Candidatura a un'email personale (@gmail ecc.) | +1 |
+| WhatsApp/Telegram o email personale (@gmail ecc.) senza nome dell'azienda | +1 (0 se l'azienda è nominata) |
 | Annuncio anonimo (vietato dall'art. 9 D.Lgs. 276/2003) | +1 |
 | Recensioni: 2 o più parlano di stipendi in ritardo o non pagati (una sola: +1) | +2 |
-| Compenso a provvigione o "guadagni illimitati" | +2 |
-| Ti chiedono di pagare (corso, kit, iscrizione) | +3 |
+| Solo provvigioni, "guadagni illimitati", nessun fisso | +3 |
+| Provvigioni senza dire se c'è un fisso | +1 |
+| Fisso più provvigioni | 0 (solo nota) |
 | Prestazione occasionale o ritenuta d'acconto | +1 |
-| Descrizione molto scarna | +1 |
+| Mansioni vaghe ("varie mansioni", "ruolo dinamico") senza compiti concreti | +1 |
+| …e in più colloquio di gruppo, "N figure per nuova apertura", "carriera rapida" | +2 |
 | L'azienda risponde spesso ai candidati | −1 |
 | L'azienda sta valutando attivamente le candidature (LinkedIn) | −1 |
 | 3 o più tue candidature all'azienda senza risposta (diario) | +2 |
@@ -136,6 +138,17 @@ Se il browser ha l'opzione "Chiedi dove salvare ogni file" attiva, o trattiene u
 | Annuncio promosso | 0 (solo informativo) |
 
 Semaforo: 0–1 verde (rischio basso), 2–3 giallo (medio), 4 o più rosso (alto).
+
+### STOP: "Non candidarti"
+
+Dalla 2.5.0 alcuni segnali bastano da soli: il riquadro diventa un avviso rosso **Non candidarti**, l'icona mostra **STOP**, qualunque sia il resto.
+
+- Ti chiedono soldi: corso, kit, divisa, quota, cauzione, deposito.
+- Ti chiedono documento d'identità o IBAN già nell'annuncio (il solo codice fiscale no: è un +1).
+- Guadagni facili, pagati "a compito", like o recensioni.
+- Prova o formazione di lavoro non pagata (tirocini e volontariato esclusi).
+
+È un avviso, non un muro: con **Mostramelo comunque** vedi tutta l'analisi, se pensi che sia un falso allarme. Le regole sono state decise mettendosi nei panni di chi cerca lavoro senza soldi né tempo da perdere, insieme a DeepSeek e ChatGPT.
 
 ## Diario
 
