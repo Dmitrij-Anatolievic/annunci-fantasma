@@ -190,3 +190,6 @@ node test/analyze.test.js   # test automatici
 ## Licenza
 
 MIT
+
+
+> Developed with AI-assisted coding tools (Claude/Anthropic)
